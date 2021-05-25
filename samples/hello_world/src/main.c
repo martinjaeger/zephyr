@@ -6,8 +6,9 @@
 
 #include <zephyr.h>
 #include <sys/printk.h>
+#include <stdio.h>
 
 void main(void)
 {
-	printk("Hello World! %s\n", CONFIG_BOARD);
+	printf("Hello World! %s %f\n", CONFIG_BOARD, 3.14F);
 }
