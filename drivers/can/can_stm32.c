@@ -483,6 +483,11 @@ static int can_stm32_get_max_bitrate(const struct device *dev, uint32_t *max_bit
 	return 0;
 }
 
+static int can_stm32_get_max_filters(const struct device *dev, enum can_ide id_type)
+{
+	return CONFIG_CAN_MAX_FILTER;
+}
+
 static int can_stm32_init(const struct device *dev)
 {
 	const struct can_stm32_config *cfg = dev->config;
@@ -1148,6 +1153,7 @@ static const struct can_driver_api can_api_funcs = {
 	.set_state_change_callback = can_stm32_set_state_change_callback,
 	.get_core_clock = can_stm32_get_core_clock,
 	.get_max_bitrate = can_stm32_get_max_bitrate,
+	.get_max_filters = can_stm32_get_max_filters,
 	.timing_min = {
 		.sjw = 0x1,
 		.prop_seg = 0x00,
