@@ -290,6 +290,18 @@ enum lorawan_datarate lorawan_get_min_datarate(void);
 void lorawan_get_payload_sizes(uint8_t *max_next_payload_size,
 			       uint8_t *max_payload_size);
 
+#ifdef CONFIG_LORAWAN_FUOTA
+
+/**
+ * @brief Starts Firmware-Upgrade Over The Air (FUOTA) background task
+ *
+ * This function starts the clock synchronisation process and afterwards waits
+ * for incoming FUOTA requests in a dedicated thread in the background.
+ */
+void lorawan_start_fuota_service(void);
+
+#endif
+
 #ifdef __cplusplus
 }
 #endif

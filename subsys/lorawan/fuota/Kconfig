@@ -1,0 +1,23 @@
+# LoRaWAN Firmware-Upgrade Over The Air (FUOTA) configuration options
+#
+# Copyright (c) 2022 Martin Jäger <martin@libre.solar>
+# SPDX-License-Identifier: Apache-2.0
+
+config LORAWAN_FUOTA
+	bool "LoRaWAN FUOTA backend"
+	help
+	  ToDo
+
+config LORAWAN_FUOTA_THREAD_PRIORITY
+	int "Thread priority"
+	depends on LORAWAN_FUOTA
+	default 2
+	help
+	  Priority of the thread running the FUOTA service.
+
+config LORAWAN_FUOTA_THREAD_STACK_SIZE
+	int "FUOTA thread stack size"
+	depends on LORAWAN_FUOTA
+	default 2048
+	help
+	  Stack size of thread running the FUOTA service in the background.
