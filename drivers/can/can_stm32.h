@@ -36,7 +36,7 @@
 					   CAN_BANK_IN_32BIT_MODE(can, bank))
 #define CAN_IN_32BIT_MASK_MODE(can, bank) (!CAN_BANK_IN_LIST_MODE(can, bank) &&	\
 					   CAN_BANK_IN_32BIT_MODE(can, bank))
-struct can_mailbox {
+struct can_stm32_mailbox {
 	can_tx_callback_t tx_callback;
 	void *callback_arg;
 	struct k_sem tx_int_sem;
@@ -45,19 +45,19 @@ struct can_mailbox {
 
 
 /* number = FSCx | FMBx */
-enum can_filter_type {
-	CAN_FILTER_STANDARD_MASKED = 0,
-	CAN_FILTER_STANDARD = 1,
-	CAN_FILTER_EXTENDED_MASKED = 2,
-	CAN_FILTER_EXTENDED = 3
+enum can_stm32_filter_type {
+	CAN_STM32_FILTER_STANDARD_MASKED = 0,
+	CAN_STM32_FILTER_STANDARD = 1,
+	CAN_STM32_FILTER_EXTENDED_MASKED = 2,
+	CAN_STM32_FILTER_EXTENDED = 3
 };
 
 struct can_stm32_data {
 	struct k_mutex inst_mutex;
 	struct k_sem tx_int_sem;
-	struct can_mailbox mb0;
-	struct can_mailbox mb1;
-	struct can_mailbox mb2;
+	struct can_stm32_mailbox mb0;
+	struct can_stm32_mailbox mb1;
+	struct can_stm32_mailbox mb2;
 	uint64_t filter_usage;
 	can_rx_callback_t rx_cb[CONFIG_CAN_MAX_FILTER];
 	void *cb_arg[CONFIG_CAN_MAX_FILTER];
