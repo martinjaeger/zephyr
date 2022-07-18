@@ -1,0 +1,5 @@
+
+/* not needed and results in compile errors */
+&qspi {
+        status = "disabled";
+};
