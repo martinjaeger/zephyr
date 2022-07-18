@@ -220,3 +220,8 @@ void fuota_clock_sync_start(struct lorawan_fuota_context *fuota_ctx)
 	k_work_init_delayable(&ctx.sync_work, clock_sync_handler);
 	k_work_reschedule_for_queue(ctx.workq, &ctx.sync_work, K_NO_WAIT);
 }
+
+uint32_t fuota_clock_sync_get_time(void)
+{
+	return (uint32_t)(k_uptime_get() / 1000 + ctx.time_correction);
+}

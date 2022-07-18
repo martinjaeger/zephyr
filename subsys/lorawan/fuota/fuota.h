@@ -37,6 +37,18 @@ struct lorawan_fuota_context {
 	struct k_work_q work_queue;
 };
 
+/**
+ * Start clock synchronization work
+ *
+ * @param fuota_ctx Fuota context providing the work queue handle
+ */
 void fuota_clock_sync_start(struct lorawan_fuota_context *fuota_ctx);
+
+/**
+ * Retrieve the current synchronized time
+ *
+ * @returns synchronized time in GPS epoch format truncated to 32-bit
+ */
+uint32_t fuota_clock_sync_get_time(void);
 
 #endif /* ZEPHYR_SUBSYS_LORAWAN_FUOTA_FUOTA_H_ */
