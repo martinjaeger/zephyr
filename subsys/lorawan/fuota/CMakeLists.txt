@@ -3,4 +3,5 @@
 zephyr_library_sources_ifdef(CONFIG_LORAWAN_FUOTA
         clock_sync.c
         fuota.c
+        multicast.c
 )

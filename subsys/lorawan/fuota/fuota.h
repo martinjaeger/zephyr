@@ -51,4 +51,15 @@ void fuota_clock_sync_start(struct lorawan_fuota_context *fuota_ctx);
  */
 uint32_t fuota_clock_sync_get_time(void);
 
+/**
+ * Initialize the multicast session layer
+ *
+ * This function assigns the downlink callback to receive incoming MC session
+ * requests. After successfully setting up an MC session, the device is switched
+ * to Class C mode.
+ *
+ * @param fuota_ctx Fuota context providing the work queue handle
+ */
+int fuota_multicast_init(struct lorawan_fuota_context *fuota_ctx);
+
 #endif /* ZEPHYR_SUBSYS_LORAWAN_FUOTA_FUOTA_H_ */
