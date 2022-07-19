@@ -62,4 +62,14 @@ uint32_t fuota_clock_sync_get_time(void);
  */
 int fuota_multicast_init(struct lorawan_fuota_context *fuota_ctx);
 
+/**
+ * Initialize the fragmented data layer
+ *
+ * This function assigns the downlink callback to receive incoming fragmented data
+ * requests.
+ *
+ * @param fuota_ctx Fuota context providing the work queue handle
+ */
+int fuota_frag_data_init(struct lorawan_fuota_context *fuota_ctx);
+
 #endif /* ZEPHYR_SUBSYS_LORAWAN_FUOTA_FUOTA_H_ */

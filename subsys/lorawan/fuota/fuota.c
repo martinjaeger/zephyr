@@ -23,6 +23,7 @@ void lorawan_start_fuota_service(void)
 	k_thread_name_set(&fuota_ctx.work_queue.thread, "lorawan_fuota_work_q");
 
 	fuota_multicast_init(&fuota_ctx);
+	fuota_frag_data_init(&fuota_ctx);
 
 	/* initializes the fuota process on the server side */
 	fuota_clock_sync_start(&fuota_ctx);
