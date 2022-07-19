@@ -13,8 +13,13 @@
 
 LOG_MODULE_REGISTER(fuota_multicast, CONFIG_LORAWAN_LOG_LEVEL);
 
-/* LoRaWAN Remote Multicast Setup Specification TS005-2.0.0 */
-#define MULTICAST_PACKAGE_VERSION 2
+/**
+ * Select LoRaWAN Remote Multicast Setup Specification
+ *
+ * 1: TS005-1.0.0 (as used in LoRaMAC-node v4.5.x and v4.6.x)
+ * 2: TS005-2.0.0 (not fully implemented)
+ */
+#define MULTICAST_PACKAGE_VERSION CONFIG_LORAWAN_FUOTA_SPEC_VERSION
 
 enum multicast_commands {
 	MULTICAST_CMD_PKG_VERSION              = 0x00,

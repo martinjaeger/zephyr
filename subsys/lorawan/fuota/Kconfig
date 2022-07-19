@@ -21,3 +21,18 @@ config LORAWAN_FUOTA_THREAD_STACK_SIZE
 	default 2048
 	help
 	  Stack size of thread running the FUOTA service in the background.
+
+config LORAWAN_FUOTA_SPEC_VERSION
+	int "Revision of the Spec to be used"
+	depends on LORAWAN_FUOTA
+	range 1 2
+	default 1
+	help
+	  The LoRa Alliance released different versions of the FUOTA
+	  specification packages.
+
+	  Version 1.0.0 from 2018 is the default, which is also used in the
+	  official LoRaMAC-node implementation up to v4.6.
+
+	  Version 2.0.0 from 2022 is not yet fully supported, but can be
+	  enabled for testing purposes.

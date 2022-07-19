@@ -12,8 +12,13 @@
 
 LOG_MODULE_REGISTER(fuota_clock_sync, CONFIG_LORAWAN_LOG_LEVEL);
 
-/* LoRaWAN Application Layer Clock Synchronization Specification TS003-2.0.0 */
-#define CLOCK_SYNC_PACKAGE_VERSION 2
+/**
+ * Select LoRaWAN Application Layer Clock Synchronization Specification
+ *
+ * 1: TS003-1.0.0 (as used in LoRaMAC-node v4.5.x and v4.6.x)
+ * 2: TS003-2.0.0 (not fully implemented)
+ */
+#define CLOCK_SYNC_PACKAGE_VERSION CONFIG_LORAWAN_FUOTA_SPEC_VERSION
 
 enum clock_sync_commands {
 	CLOCK_SYNC_CMD_PKG_VERSION                 = 0x00,
