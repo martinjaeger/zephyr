@@ -21,6 +21,9 @@ LOG_MODULE_REGISTER(fuota_multicast, CONFIG_LORAWAN_LOG_LEVEL);
  */
 #define MULTICAST_PACKAGE_VERSION CONFIG_LORAWAN_FUOTA_SPEC_VERSION
 
+/* maximum length of multicast answers */
+#define MAX_MULTICAST_ANS_LEN 5
+
 enum multicast_commands {
 	MULTICAST_CMD_PKG_VERSION              = 0x00,
 	MULTICAST_CMD_MC_GROUP_STATUS          = 0x01,
@@ -48,6 +51,10 @@ struct multicast_context {
 
 static struct k_work_q *workq;
 
+static struct k_work tx_work;
+static uint8_t tx_buf[3 * MAX_MULTICAST_ANS_LEN];
+static uint8_t tx_pos;
+
 static struct multicast_context ctx[LORAMAC_MAX_MC_CTX];
 
 static void multicast_session_start(struct k_work *work)
@@ -62,54 +69,69 @@ static void multicast_session_stop(struct k_work *work)
 	lorawan_set_class(LORAWAN_CLASS_A);
 }
 
+static void multicast_tx_handler(struct k_work *work)
+{
+	int err;
+
+	err = lorawan_send(LORAWAN_PORT_MULTICAST, tx_buf, tx_pos, LORAWAN_MSG_UNCONFIRMED);
+	if (err) {
+		LOG_ERR("Sending multicast answer failed: %d", err);
+	}
+}
+
 static void multicast_package_callback(uint8_t port, bool data_pending, int16_t rssi, int8_t snr,
 				       uint8_t len, const uint8_t *rx_buf)
 {
-	uint8_t rx_buf_pos = 0;
-	uint8_t tx_buf_pos = 0;
-	uint8_t tx_buf[5];
-	int err;
+	uint8_t rx_pos = 0;
 
 	if (port != LORAWAN_PORT_MULTICAST) {
 		LOG_ERR("Wrong port %d for remote multicast package", port);
 		return;
 	}
 
-	while (rx_buf_pos < len) {
-		uint8_t command_id = rx_buf[rx_buf_pos++];
+	if (k_work_is_pending(&tx_work)) {
+		/* we are not allowed to use the tx buffer */
+		LOG_ERR("tx_work pending, cannot process package");
+		return;
+	}
+
+	tx_pos = 0;
+
+	while (rx_pos < len) {
+		uint8_t command_id = rx_buf[rx_pos++];
 
 		LOG_DBG("Received multicast cmd 0x%.2x", command_id);
 
 		switch (command_id) {
 		case MULTICAST_CMD_PKG_VERSION:
-			tx_buf[tx_buf_pos++] = MULTICAST_CMD_PKG_VERSION;
-			tx_buf[tx_buf_pos++] = LORAWAN_PACKAGE_ID_REMOTE_MULTICAST_SETUP;
-			tx_buf[tx_buf_pos++] = MULTICAST_PACKAGE_VERSION;
+			tx_buf[tx_pos++] = MULTICAST_CMD_PKG_VERSION;
+			tx_buf[tx_pos++] = LORAWAN_PACKAGE_ID_REMOTE_MULTICAST_SETUP;
+			tx_buf[tx_pos++] = MULTICAST_PACKAGE_VERSION;
 			break;
 		case MULTICAST_CMD_MC_GROUP_STATUS:
 			LOG_ERR("McGroupStatusReq not implemented");
 			return;
 		case MULTICAST_CMD_MC_GROUP_SETUP: {
-			uint8_t id = rx_buf[rx_buf_pos++] & 0x03;
+			uint8_t id = rx_buf[rx_pos++] & 0x03;
 
-			ctx[id].mc_addr = rx_buf[rx_buf_pos++];
-			ctx[id].mc_addr += (rx_buf[rx_buf_pos++] << 8);
-			ctx[id].mc_addr += (rx_buf[rx_buf_pos++] << 16);
-			ctx[id].mc_addr += (rx_buf[rx_buf_pos++] << 24);
+			ctx[id].mc_addr = rx_buf[rx_pos++];
+			ctx[id].mc_addr += (rx_buf[rx_pos++] << 8);
+			ctx[id].mc_addr += (rx_buf[rx_pos++] << 16);
+			ctx[id].mc_addr += (rx_buf[rx_pos++] << 24);
 
 			for (int i = 0; i < 16; i++) {
-				ctx[id].mc_key_encrypted[i] = rx_buf[rx_buf_pos++];
+				ctx[id].mc_key_encrypted[i] = rx_buf[rx_pos++];
 			}
 
-			ctx[id].mc_fcnt_min = rx_buf[rx_buf_pos++];
-			ctx[id].mc_fcnt_min += (rx_buf[rx_buf_pos++] << 8);
-			ctx[id].mc_fcnt_min += (rx_buf[rx_buf_pos++] << 16);
-			ctx[id].mc_fcnt_min += (rx_buf[rx_buf_pos++] << 24);
+			ctx[id].mc_fcnt_min = rx_buf[rx_pos++];
+			ctx[id].mc_fcnt_min += (rx_buf[rx_pos++] << 8);
+			ctx[id].mc_fcnt_min += (rx_buf[rx_pos++] << 16);
+			ctx[id].mc_fcnt_min += (rx_buf[rx_pos++] << 24);
 
-			ctx[id].mc_fcnt_max = rx_buf[rx_buf_pos++];
-			ctx[id].mc_fcnt_max += (rx_buf[rx_buf_pos++] << 8);
-			ctx[id].mc_fcnt_max += (rx_buf[rx_buf_pos++] << 16);
-			ctx[id].mc_fcnt_max += (rx_buf[rx_buf_pos++] << 24);
+			ctx[id].mc_fcnt_max = rx_buf[rx_pos++];
+			ctx[id].mc_fcnt_max += (rx_buf[rx_pos++] << 8);
+			ctx[id].mc_fcnt_max += (rx_buf[rx_pos++] << 16);
+			ctx[id].mc_fcnt_max += (rx_buf[rx_pos++] << 24);
 
 			LOG_DBG("McGroupSetupReq addr: 0x%.8X, fcnt_min: %u, fcnt_max: %d",
 				ctx[id].mc_addr, ctx[id].mc_fcnt_min, ctx[id].mc_fcnt_max);
@@ -127,12 +149,12 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 			};
 			LoRaMacStatus_t ret = LoRaMacMcChannelSetup(&channel);
 
-			tx_buf[tx_buf_pos++] = MULTICAST_CMD_MC_GROUP_SETUP;
+			tx_buf[tx_pos++] = MULTICAST_CMD_MC_GROUP_SETUP;
 			if (ret == LORAMAC_STATUS_OK) {
-				tx_buf[tx_buf_pos++] = id;
+				tx_buf[tx_pos++] = id;
 			} else if (ret == LORAMAC_STATUS_MC_GROUP_UNDEFINED) {
 				/* set IDerror flag */
-				tx_buf[tx_buf_pos++] = (1U << 2) | id;
+				tx_buf[tx_pos++] = (1U << 2) | id;
 			} else {
 				LOG_ERR("McGroupSetupReq failed: %d", ret);
 				return;
@@ -140,16 +162,16 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 			break;
 		}
 		case MULTICAST_CMD_MC_GROUP_DELETE: {
-			uint8_t id = rx_buf[rx_buf_pos++] & 0x03;
+			uint8_t id = rx_buf[rx_pos++] & 0x03;
 
 			LoRaMacStatus_t ret = LoRaMacMcChannelDelete((AddressIdentifier_t)id);
 
-			tx_buf[tx_buf_pos++] = MULTICAST_CMD_MC_GROUP_DELETE;
+			tx_buf[tx_pos++] = MULTICAST_CMD_MC_GROUP_DELETE;
 			if (ret == LORAMAC_STATUS_OK) {
-				tx_buf[tx_buf_pos++] = id;
+				tx_buf[tx_pos++] = id;
 			} else if (ret == LORAMAC_STATUS_MC_GROUP_UNDEFINED) {
 				/* set McGroupUndefined flag */
-				tx_buf[tx_buf_pos++] = (1U << 2) | id;
+				tx_buf[tx_pos++] = (1U << 2) | id;
 			} else {
 				LOG_ERR("McGroupDeleteReq failed: %d", ret);
 				return;
@@ -158,21 +180,21 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 		}
 		case MULTICAST_CMD_MC_GROUP_CLASS_C_SESSION: {
 			uint8_t status = 0x00;
-			uint8_t id = rx_buf[rx_buf_pos++] & 0x03;
+			uint8_t id = rx_buf[rx_pos++] & 0x03;
 
-			ctx[id].session_time = rx_buf[rx_buf_pos++];
-			ctx[id].session_time += rx_buf[rx_buf_pos++] << 8;
-			ctx[id].session_time += rx_buf[rx_buf_pos++] << 16;
-			ctx[id].session_time += rx_buf[rx_buf_pos++] << 24;
+			ctx[id].session_time = rx_buf[rx_pos++];
+			ctx[id].session_time += rx_buf[rx_pos++] << 8;
+			ctx[id].session_time += rx_buf[rx_pos++] << 16;
+			ctx[id].session_time += rx_buf[rx_pos++] << 24;
 
-			ctx[id].session_timeout = 1U << (rx_buf[rx_buf_pos++] & 0x0F);
+			ctx[id].session_timeout = 1U << (rx_buf[rx_pos++] & 0x0F);
 
-			ctx[id].rx_params.ClassC.Frequency = rx_buf[rx_buf_pos++];
-			ctx[id].rx_params.ClassC.Frequency += rx_buf[rx_buf_pos++] << 8;
-			ctx[id].rx_params.ClassC.Frequency += rx_buf[rx_buf_pos++] << 16;
+			ctx[id].rx_params.ClassC.Frequency = rx_buf[rx_pos++];
+			ctx[id].rx_params.ClassC.Frequency += rx_buf[rx_pos++] << 8;
+			ctx[id].rx_params.ClassC.Frequency += rx_buf[rx_pos++] << 16;
 			ctx[id].rx_params.ClassC.Frequency *= 100;
 
-			ctx[id].rx_params.ClassC.Datarate = rx_buf[rx_buf_pos++];
+			ctx[id].rx_params.ClassC.Datarate = rx_buf[rx_pos++];
 
 			LOG_DBG("McClassCSessionReq time: %u, timeout: %u, freq: %u, DR: %d",
 				ctx[id].session_time, ctx[id].session_timeout,
@@ -182,7 +204,7 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 			LoRaMacStatus_t ret = LoRaMacMcChannelSetupRxParams(
 				(AddressIdentifier_t)id, &ctx[id].rx_params, &status);
 
-			tx_buf[tx_buf_pos++] = MULTICAST_CMD_MC_GROUP_CLASS_C_SESSION;
+			tx_buf[tx_pos++] = MULTICAST_CMD_MC_GROUP_CLASS_C_SESSION;
 			if (ret == LORAMAC_STATUS_OK) {
 				int32_t time_to_start =
 					ctx[id].session_time - fuota_clock_sync_get_time();
@@ -207,18 +229,18 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 						&ctx[id].session_stop_work,
 						K_SECONDS(time_to_start + ctx[id].session_timeout));
 
-					tx_buf[tx_buf_pos++] = status;
-					tx_buf[tx_buf_pos++] = (time_to_start >> 0) & 0xFF;
-					tx_buf[tx_buf_pos++] = (time_to_start >> 8) & 0xFF;
-					tx_buf[tx_buf_pos++] = (time_to_start >> 16) & 0xFF;
+					tx_buf[tx_pos++] = status;
+					tx_buf[tx_pos++] = (time_to_start >> 0) & 0xFF;
+					tx_buf[tx_pos++] = (time_to_start >> 8) & 0xFF;
+					tx_buf[tx_pos++] = (time_to_start >> 16) & 0xFF;
 				} else {
 					/* set StartMissed flag */
-					tx_buf[tx_buf_pos++] = (1U << 5) | status;
+					tx_buf[tx_pos++] = (1U << 5) | status;
 				}
 				break;
 			} else if (ret == LORAMAC_STATUS_MC_GROUP_UNDEFINED) {
 				/* set McGroupUndefined flag */
-				tx_buf[tx_buf_pos++] = (1U << 4) | status;
+				tx_buf[tx_pos++] = (1U << 4) | status;
 			} else {
 				/* ToDo: consider FreqError and DR Errors */
 
@@ -235,9 +257,8 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 		}
 	}
 
-	err = lorawan_send(LORAWAN_PORT_MULTICAST, tx_buf, tx_buf_pos, LORAWAN_MSG_UNCONFIRMED);
-	if (err) {
-		LOG_ERR("Sending MC answer failed: %d", err);
+	if (tx_pos > 0) {
+		k_work_submit_to_queue(workq, &tx_work);
 	}
 }
 
@@ -249,6 +270,8 @@ static struct lorawan_downlink_cb downlink_cb = {
 int fuota_multicast_init(struct lorawan_fuota_context *fuota_ctx)
 {
 	workq = &fuota_ctx->work_queue;
+
+	k_work_init(&tx_work, multicast_tx_handler);
 
 	lorawan_register_downlink_callback(&downlink_cb);
 

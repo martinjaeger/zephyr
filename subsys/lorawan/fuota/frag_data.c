@@ -21,6 +21,9 @@ LOG_MODULE_REGISTER(fuota_frag_data, CONFIG_LORAWAN_LOG_LEVEL);
  */
 #define FRAG_DATA_PACKAGE_VERSION CONFIG_LORAWAN_FUOTA_SPEC_VERSION
 
+/* maximum length of frag_data answers */
+#define MAX_FRAG_DATA_ANS_LEN 5
+
 enum frag_data_commands {
 	FRAG_DATA_CMD_PKG_VERSION         = 0x00,
 	FRAG_DATA_CMD_FRAG_STATUS         = 0x01,
@@ -74,6 +77,10 @@ struct frag_data_context {
 
 static struct k_work_q *workq;
 
+static struct k_work tx_work;
+static uint8_t tx_buf[3 * MAX_FRAG_DATA_ANS_LEN];
+static uint8_t tx_pos;
+
 static struct frag_data_context ctx[LORAMAC_MAX_MC_CTX];
 
 static int8_t frag_decoder_write(uint32_t addr, uint8_t *data, uint32_t size)
@@ -97,19 +104,34 @@ static void frag_decoder_finish(void)
 	LOG_DBG("frag decoder finish");
 }
 
+static void frag_data_tx_handler(struct k_work *work)
+{
+	int err;
+
+	err = lorawan_send(LORAWAN_PORT_FRAG_DATA, tx_buf, tx_pos, LORAWAN_MSG_UNCONFIRMED);
+	if (err) {
+		LOG_ERR("Sending frag data answer failed: %d", err);
+	}
+}
+
 static void frag_data_package_callback(uint8_t port, bool data_pending, int16_t rssi, int8_t snr,
 				       uint8_t len, const uint8_t *rx_buf)
 {
 	uint8_t rx_pos = 0;
-	uint8_t tx_pos = 0;
-	uint8_t tx_buf[5];
 	bool delayed_answer = false;
-	int err;
 
 	if (port != LORAWAN_PORT_FRAG_DATA) {
 		LOG_ERR("Wrong port %d for frag data package", port);
 		return;
 	}
+
+	if (k_work_is_pending(&tx_work)) {
+		/* we are not allowed to use the tx buffer */
+		LOG_ERR("tx_work pending, cannot process package");
+		return;
+	}
+
+	tx_pos = 0;
 
 	while (rx_pos < len) {
 		uint8_t command_id = rx_buf[rx_pos++];
@@ -267,12 +289,9 @@ static void frag_data_package_callback(uint8_t port, bool data_pending, int16_t 
 	}
 
 	if (tx_pos > 0) {
-		/* ToDo: consider delayed_answer */
+		/* ToDo: consider delayed_answer and use k_work_delayable */
 
-		err = lorawan_send(LORAWAN_PORT_FRAG_DATA, tx_buf, tx_pos, LORAWAN_MSG_UNCONFIRMED);
-		if (err) {
-			LOG_ERR("Sending frag data answer failed: %d", err);
-		}
+		k_work_submit_to_queue(workq, &tx_work);
 	}
 }
 
@@ -284,6 +303,8 @@ static struct lorawan_downlink_cb downlink_cb = {
 int fuota_frag_data_init(struct lorawan_fuota_context *fuota_ctx)
 {
 	workq = &fuota_ctx->work_queue;
+
+	k_work_init(&tx_work, frag_data_tx_handler);
 
 	lorawan_register_downlink_callback(&downlink_cb);
 
