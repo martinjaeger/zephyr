@@ -118,8 +118,6 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 	while (rx_pos < len) {
 		uint8_t command_id = rx_buf[rx_pos++];
 
-		LOG_DBG("Received clock sync cmd 0x%.2x", command_id);
-
 		if (sizeof(ctx.tx_buf) - ctx.tx_pos < MAX_CLOCK_SYNC_ANS_LEN) {
 			LOG_ERR("insufficient tx_buf size, some requests discarded");
 			break;
@@ -130,6 +128,7 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 			ctx.tx_buf[ctx.tx_pos++] = CLOCK_SYNC_CMD_PKG_VERSION;
 			ctx.tx_buf[ctx.tx_pos++] = LORAWAN_PACKAGE_ID_CLOCK_SYNC;
 			ctx.tx_buf[ctx.tx_pos++] = CLOCK_SYNC_PACKAGE_VERSION;
+			LOG_DBG("PackageVersionReq");
 			break;
 		case CLOCK_SYNC_CMD_APP_TIME: {
 			/* answer from application server */
@@ -146,6 +145,9 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 				ctx.time_correction += time_correction;
 				ctx.req_token = (ctx.req_token + 1) % 16;
 			}
+
+			LOG_DBG("AppTimeAns time_correction: %d s, token: 0x%x",
+				time_correction, token);
 			break;
 		}
 		case CLOCK_SYNC_CMD_DEVICE_APP_TIME_PERIODICITY: {
@@ -158,6 +160,8 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 			ctx.tx_pos +=
 				clock_sync_serialize_device_time(ctx.tx_buf + ctx.tx_pos,
 								 sizeof(ctx.tx_buf) - ctx.tx_pos);
+
+			LOG_DBG("DeviceAppTimePeriodicityReq");
 			break;
 		}
 		case CLOCK_SYNC_CMD_FORCE_DEVICE_RESYNC: {
@@ -166,6 +170,11 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 			if (nb_transmissions != 0) {
 				ctx.nb_transmissions = nb_transmissions;
 			}
+
+			/* ToDo: consider nb_transmissions */
+			k_work_reschedule_for_queue(ctx.workq, &ctx.resync_work, K_NO_WAIT);
+
+			LOG_DBG("ForceDeviceResyncCmd nb_transmissions: %u", nb_transmissions);
 			break;
 		}
 		default:
