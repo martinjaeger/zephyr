@@ -138,14 +138,14 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 
 			McChannelParams_t channel = {
 				.IsRemotelySetup = true,
-				.Class = CLASS_C,
+				.RxParams.Class = CLASS_C,
 				.IsEnabled = true,
 				.GroupID = (AddressIdentifier_t)id,
 				.Address = ctx[id].mc_addr,
 				.McKeys.McKeyE = ctx[id].mc_key_encrypted,
 				.FCountMin = ctx[id].mc_fcnt_min,
 				.FCountMax = ctx[id].mc_fcnt_max,
-				.RxParams.ClassC = {0}
+				.RxParams = {0}
 			};
 			LoRaMacStatus_t ret = LoRaMacMcChannelSetup(&channel);
 
@@ -189,17 +189,19 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 
 			ctx[id].session_timeout = 1U << (rx_buf[rx_pos++] & 0x0F);
 
-			ctx[id].rx_params.ClassC.Frequency = rx_buf[rx_pos++];
-			ctx[id].rx_params.ClassC.Frequency += rx_buf[rx_pos++] << 8;
-			ctx[id].rx_params.ClassC.Frequency += rx_buf[rx_pos++] << 16;
-			ctx[id].rx_params.ClassC.Frequency *= 100;
+			ctx[id].rx_params.Class = CLASS_C;
 
-			ctx[id].rx_params.ClassC.Datarate = rx_buf[rx_pos++];
+			ctx[id].rx_params.Params.ClassC.Frequency = rx_buf[rx_pos++];
+			ctx[id].rx_params.Params.ClassC.Frequency += rx_buf[rx_pos++] << 8;
+			ctx[id].rx_params.Params.ClassC.Frequency += rx_buf[rx_pos++] << 16;
+			ctx[id].rx_params.Params.ClassC.Frequency *= 100;
+
+			ctx[id].rx_params.Params.ClassC.Datarate = rx_buf[rx_pos++];
 
 			LOG_DBG("McClassCSessionReq time: %u, timeout: %u, freq: %u, DR: %d",
 				ctx[id].session_time, ctx[id].session_timeout,
-				ctx[id].rx_params.ClassC.Frequency,
-				ctx[id].rx_params.ClassC.Datarate);
+				ctx[id].rx_params.Params.ClassC.Frequency,
+				ctx[id].rx_params.Params.ClassC.Datarate);
 
 			LoRaMacStatus_t ret = LoRaMacMcChannelSetupRxParams(
 				(AddressIdentifier_t)id, &ctx[id].rx_params, &status);
