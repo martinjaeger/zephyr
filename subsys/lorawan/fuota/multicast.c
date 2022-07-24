@@ -11,7 +11,7 @@
 #include <zephyr/lorawan/lorawan.h>
 #include <zephyr/logging/log.h>
 
-LOG_MODULE_REGISTER(fuota_multicast, CONFIG_LORAWAN_LOG_LEVEL);
+LOG_MODULE_REGISTER(fuota_multicast, CONFIG_LORAWAN_FUOTA_LOG_LEVEL);
 
 /**
  * Select LoRaWAN Remote Multicast Setup Specification
@@ -51,7 +51,7 @@ struct multicast_context {
 
 static struct k_work_q *workq;
 
-static struct k_work tx_work;
+static struct k_work_delayable tx_work;
 static uint8_t tx_buf[3 * MAX_MULTICAST_ANS_LEN];
 static uint8_t tx_pos;
 
@@ -59,14 +59,28 @@ static struct multicast_context ctx[LORAMAC_MAX_MC_CTX];
 
 static void multicast_session_start(struct k_work *work)
 {
-	lorawan_set_class(LORAWAN_CLASS_C);
+	int err;
+
+	err = lorawan_set_class(LORAWAN_CLASS_C);
+	if (err) {
+		LOG_ERR("Failed to switch to class C: %d", err);
+	} else {
+		LOG_DBG("Switched to class C");
+	}
 }
 
 static void multicast_session_stop(struct k_work *work)
 {
+	int err;
+
 	/* ToDo: Check if there are other MC sessions in progress before switching class */
 
-	lorawan_set_class(LORAWAN_CLASS_A);
+	err = lorawan_set_class(LORAWAN_CLASS_A);
+	if (err) {
+		LOG_ERR("Failed to revert to class A: %d", err);
+	} else {
+		LOG_DBG("Reverted to class A");
+	}
 }
 
 static void multicast_tx_handler(struct k_work *work)
@@ -100,13 +114,12 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 	while (rx_pos < len) {
 		uint8_t command_id = rx_buf[rx_pos++];
 
-		LOG_DBG("Received multicast cmd 0x%.2x", command_id);
-
 		switch (command_id) {
 		case MULTICAST_CMD_PKG_VERSION:
 			tx_buf[tx_pos++] = MULTICAST_CMD_PKG_VERSION;
 			tx_buf[tx_pos++] = LORAWAN_PACKAGE_ID_REMOTE_MULTICAST_SETUP;
 			tx_buf[tx_pos++] = MULTICAST_PACKAGE_VERSION;
+			LOG_DBG("PackageVersionReq");
 			break;
 		case MULTICAST_CMD_MC_GROUP_STATUS:
 			LOG_ERR("McGroupStatusReq not implemented");
@@ -133,12 +146,12 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 			ctx[id].mc_fcnt_max += (rx_buf[rx_pos++] << 16);
 			ctx[id].mc_fcnt_max += (rx_buf[rx_pos++] << 24);
 
-			LOG_DBG("McGroupSetupReq addr: 0x%.8X, fcnt_min: %u, fcnt_max: %d",
-				ctx[id].mc_addr, ctx[id].mc_fcnt_min, ctx[id].mc_fcnt_max);
+			LOG_DBG("McGroupSetupReq id: %d, addr: 0x%.8X, "
+				"fcnt_min: %u, fcnt_max: %d", id, ctx[id].mc_addr,
+				ctx[id].mc_fcnt_min, ctx[id].mc_fcnt_max);
 
 			McChannelParams_t channel = {
 				.IsRemotelySetup = true,
-				.RxParams.Class = CLASS_C,
 				.IsEnabled = true,
 				.GroupID = (AddressIdentifier_t)id,
 				.Address = ctx[id].mc_addr,
@@ -156,7 +169,8 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 				/* set IDerror flag */
 				tx_buf[tx_pos++] = (1U << 2) | id;
 			} else {
-				LOG_ERR("McGroupSetupReq failed: %d", ret);
+				LOG_ERR("McGroupSetupReq failed: %s",
+					lorawan_status2str(ret));
 				return;
 			}
 			break;
@@ -166,6 +180,8 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 
 			LoRaMacStatus_t ret = LoRaMacMcChannelDelete((AddressIdentifier_t)id);
 
+			LOG_DBG("McGroupDeleteReq id: %d", id);
+
 			tx_buf[tx_pos++] = MULTICAST_CMD_MC_GROUP_DELETE;
 			if (ret == LORAMAC_STATUS_OK) {
 				tx_buf[tx_pos++] = id;
@@ -173,7 +189,8 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 				/* set McGroupUndefined flag */
 				tx_buf[tx_pos++] = (1U << 2) | id;
 			} else {
-				LOG_ERR("McGroupDeleteReq failed: %d", ret);
+				LOG_ERR("McGroupDeleteReq failed: %s",
+					lorawan_status2str(ret));
 				return;
 			}
 			break;
@@ -217,7 +234,8 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 				}
 
 				if (time_to_start > 0) {
-					LOG_DBG("Starting MC session in %d s", time_to_start);
+					LOG_DBG("Starting class C session in %d s",
+						time_to_start);
 
 					k_work_init_delayable(&ctx[id].session_start_work,
 						multicast_session_start);
@@ -236,18 +254,22 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 					tx_buf[tx_pos++] = (time_to_start >> 8) & 0xFF;
 					tx_buf[tx_pos++] = (time_to_start >> 16) & 0xFF;
 				} else {
+					LOG_ERR("Missed class C session start at %d in %d s",
+						ctx[id].session_time, time_to_start);
 					/* set StartMissed flag */
 					tx_buf[tx_pos++] = (1U << 5) | status;
 				}
 				break;
-			} else if (ret == LORAMAC_STATUS_MC_GROUP_UNDEFINED) {
-				/* set McGroupUndefined flag */
-				tx_buf[tx_pos++] = (1U << 4) | status;
 			} else {
-				/* ToDo: consider FreqError and DR Errors */
-
-				LOG_ERR("McClassCSessionReq failed: %s", lorawan_status2str(ret));
-				return;
+				LOG_ERR("McClassCSessionReq failed: %s",
+					lorawan_status2str(ret));
+				if (ret == LORAMAC_STATUS_MC_GROUP_UNDEFINED) {
+					/* set McGroupUndefined flag */
+					tx_buf[tx_pos++] = (1U << 4) | status;
+				} else {
+					/* ToDo: consider FreqError and DR Errors */
+					return;
+				}
 			}
 			break;
 		}

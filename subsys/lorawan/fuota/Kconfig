@@ -5,26 +5,30 @@
 
 config LORAWAN_FUOTA
 	bool "LoRaWAN FUOTA backend"
+	depends on LORAWAN
 	help
 	  ToDo
 
+if LORAWAN_FUOTA
+
+module = LORAWAN_FUOTA
+module-str = lorawan_fuota
+source "subsys/logging/Kconfig.template.log_config"
+
 config LORAWAN_FUOTA_THREAD_PRIORITY
 	int "Thread priority"
-	depends on LORAWAN_FUOTA
 	default 2
 	help
 	  Priority of the thread running the FUOTA service.
 
 config LORAWAN_FUOTA_THREAD_STACK_SIZE
 	int "FUOTA thread stack size"
-	depends on LORAWAN_FUOTA
 	default 2048
 	help
 	  Stack size of thread running the FUOTA service in the background.
 
 config LORAWAN_FUOTA_SPEC_VERSION
 	int "Revision of the Spec to be used"
-	depends on LORAWAN_FUOTA
 	range 1 2
 	default 1
 	help
@@ -36,3 +40,5 @@ config LORAWAN_FUOTA_SPEC_VERSION
 
 	  Version 2.0.0 from 2022 is not yet fully supported, but can be
 	  enabled for testing purposes.
+
+endif # LORAWAN_FUOTA

@@ -10,7 +10,7 @@
 #include <zephyr/lorawan/lorawan.h>
 #include <zephyr/logging/log.h>
 
-LOG_MODULE_REGISTER(fuota_clock_sync, CONFIG_LORAWAN_LOG_LEVEL);
+LOG_MODULE_REGISTER(fuota_clock_sync, CONFIG_LORAWAN_FUOTA_LOG_LEVEL);
 
 /**
  * Select LoRaWAN Application Layer Clock Synchronization Specification
@@ -144,10 +144,13 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 			if (token == ctx.req_token) {
 				ctx.time_correction += time_correction;
 				ctx.req_token = (ctx.req_token + 1) % 16;
+
+				LOG_DBG("AppTimeAns time_correction %d (token %d)",
+					time_correction, token);
+			} else {
+				LOG_WRN("AppTimeAns with outdated token %d", token);
 			}
 
-			LOG_DBG("AppTimeAns time_correction: %d s, token: 0x%x",
-				time_correction, token);
 			break;
 		}
 		case CLOCK_SYNC_CMD_DEVICE_APP_TIME_PERIODICITY: {
@@ -227,7 +230,7 @@ static int clock_sync_app_time_req(void)
 	/* Param: AnsRequired = 0 | TokenReq */
 	tx_buf[tx_pos++] = ctx.req_token;
 
-	LOG_DBG("Sending clock sync AppTimeReq");
+	LOG_DBG("Sending clock sync AppTimeReq (token %d)", ctx.req_token);
 
 	ctx.app_time_req_pending = true;
 	int err = lorawan_send(LORAWAN_PORT_CLOCK_SYNC, tx_buf, tx_pos,
@@ -263,7 +266,6 @@ void fuota_clock_sync_start(struct lorawan_fuota_context *fuota_ctx)
 
 	k_work_init_delayable(&ctx.resync_work, clock_sync_resync_handler);
 	k_work_reschedule_for_queue(ctx.workq, &ctx.resync_work, K_NO_WAIT);
-
 }
 
 uint32_t fuota_clock_sync_get_time(void)

@@ -11,7 +11,7 @@
 #include <zephyr/lorawan/lorawan.h>
 #include <zephyr/logging/log.h>
 
-LOG_MODULE_REGISTER(fuota_frag_data, CONFIG_LORAWAN_LOG_LEVEL);
+LOG_MODULE_REGISTER(fuota_frag_data, CONFIG_LORAWAN_FUOTA_LOG_LEVEL);
 
 /**
  * Select LoRaWAN Fragmented Data Block Transport Specification
@@ -186,8 +186,8 @@ static void frag_data_package_callback(uint8_t port, bool data_pending, int16_t 
 			ctx[index].descriptor += rx_buf[rx_pos++] << 16;
 			ctx[index].descriptor += rx_buf[rx_pos++] << 24;
 
-			LOG_DBG("FragSessionSetupReq nb_frag: %u, frag_size: %u, padding: %u, "
-				"control: 0x%x, descriptor: 0x%.8x",
+			LOG_DBG("FragSessionSetupReq index %d, nb_frag: %u, frag_size: %u, "
+				"padding: %u, control: 0x%x, descriptor: 0x%.8x", index,
 				ctx[index].nb_frag, ctx[index].frag_size, ctx[index].padding,
 				ctx[index].control, ctx[index].descriptor);
 

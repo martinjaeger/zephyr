@@ -9,6 +9,9 @@
 #include <zephyr/device.h>
 #include <zephyr/lorawan/lorawan.h>
 #include <zephyr/zephyr.h>
+#include <zephyr/logging/log.h>
+
+LOG_MODULE_REGISTER(lorawan_fuota_sample, CONFIG_LORAWAN_FUOTA_LOG_LEVEL);
 
 #define DEFAULT_RADIO_NODE DT_ALIAS(lora0)
 BUILD_ASSERT(DT_NODE_HAS_STATUS(DEFAULT_RADIO_NODE, okay), "No LoRa radio specified in DT");
@@ -20,14 +23,11 @@ BUILD_ASSERT(DT_NODE_HAS_STATUS(DEFAULT_RADIO_NODE, okay), "No LoRa radio specif
 #define LORAWAN_APP_KEY		{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,\
 				  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }
 
-#define LOG_LEVEL CONFIG_LOG_DEFAULT_LEVEL
-#include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(lorawan_fuota_sample);
-
 static void downlink_info(uint8_t port, bool data_pending, int16_t rssi, int8_t snr,
 			  uint8_t len, const uint8_t *data)
 {
-	LOG_INF("Port %d, Pending %d, RSSI %ddB, SNR %ddBm", port, data_pending, rssi, snr);
+	LOG_INF("Received from port %d, pending %d, RSSI %ddB, SNR %ddBm",
+		port, data_pending, rssi, snr);
 	if (data) {
 		LOG_HEXDUMP_INF(data, len, "Payload: ");
 	}
@@ -38,7 +38,7 @@ static void datarate_changed(enum lorawan_datarate dr)
 	uint8_t unused, max_size;
 
 	lorawan_get_payload_sizes(&unused, &max_size);
-	LOG_INF("New Datarate: DR_%d, Max Payload %d", dr, max_size);
+	LOG_INF("New Datarate: DR %d, Max Payload %d", dr, max_size);
 }
 
 void main(void)
