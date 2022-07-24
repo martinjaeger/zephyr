@@ -23,6 +23,9 @@ LOG_MODULE_REGISTER(fuota_clock_sync, CONFIG_LORAWAN_FUOTA_LOG_LEVEL);
 /* maximum length of clock sync answers */
 #define MAX_CLOCK_SYNC_ANS_LEN 6
 
+/* delay between consecutive transmissions of AppTimeReq */
+#define CLOCK_RESYNC_DELAY 10
+
 enum clock_sync_commands {
 	CLOCK_SYNC_CMD_PKG_VERSION                 = 0x00,
 	CLOCK_SYNC_CMD_APP_TIME                    = 0x01,
@@ -237,6 +240,14 @@ static int clock_sync_app_time_req(void)
 			LORAWAN_MSG_UNCONFIRMED);
 	if (err) {
 		LOG_ERR("Sending clock sync AppTimeReq failed: %d", err);
+	}
+
+	if (ctx.nb_transmissions > 0) {
+		if (!err) {
+			ctx.nb_transmissions--;
+		}
+		k_work_reschedule_for_queue(ctx.workq, &ctx.resync_work,
+			K_SECONDS(CLOCK_RESYNC_DELAY));
 	}
 
 	return err;
