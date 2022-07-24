@@ -77,7 +77,7 @@ struct frag_data_context {
 
 static struct k_work_q *workq;
 
-static struct k_work tx_work;
+static struct k_work_delayable tx_work;
 static uint8_t tx_buf[3 * MAX_FRAG_DATA_ANS_LEN];
 static uint8_t tx_pos;
 
@@ -125,7 +125,7 @@ static void frag_data_package_callback(uint8_t port, bool data_pending, int16_t 
 		return;
 	}
 
-	if (k_work_is_pending(&tx_work)) {
+	if (k_work_delayable_is_pending(&tx_work)) {
 		/* we are not allowed to use the tx buffer */
 		LOG_ERR("tx_work pending, cannot process package");
 		return;
@@ -289,9 +289,8 @@ static void frag_data_package_callback(uint8_t port, bool data_pending, int16_t 
 	}
 
 	if (tx_pos > 0) {
-		/* ToDo: consider delayed_answer and use k_work_delayable */
-
-		k_work_submit_to_queue(workq, &tx_work);
+		/* ToDo: consider delayed_answer and add random number */
+		k_work_reschedule_for_queue(workq, &tx_work, K_SECONDS(2));
 	}
 }
 
@@ -304,7 +303,7 @@ int fuota_frag_data_init(struct lorawan_fuota_context *fuota_ctx)
 {
 	workq = &fuota_ctx->work_queue;
 
-	k_work_init(&tx_work, frag_data_tx_handler);
+	k_work_init_delayable(&tx_work, frag_data_tx_handler);
 
 	lorawan_register_downlink_callback(&downlink_cb);
 

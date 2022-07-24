@@ -103,7 +103,7 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 		return;
 	}
 
-	if (k_work_is_pending(&tx_work)) {
+	if (k_work_delayable_is_pending(&tx_work)) {
 		/* we are not allowed to use the tx buffer */
 		LOG_ERR("tx_work pending, cannot process package");
 		return;
@@ -282,7 +282,8 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 	}
 
 	if (tx_pos > 0) {
-		k_work_submit_to_queue(workq, &tx_work);
+		/* ToDo: Random delay 2+-1 seconds according to RP002-1.0.3, chapter 2.3 */
+		k_work_reschedule_for_queue(workq, &tx_work, K_SECONDS(2));
 	}
 }
 
@@ -295,7 +296,7 @@ int fuota_multicast_init(struct lorawan_fuota_context *fuota_ctx)
 {
 	workq = &fuota_ctx->work_queue;
 
-	k_work_init(&tx_work, multicast_tx_handler);
+	k_work_init_delayable(&tx_work, multicast_tx_handler);
 
 	lorawan_register_downlink_callback(&downlink_cb);
 
