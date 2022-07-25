@@ -16,7 +16,7 @@ enum lorawan_package_id {
 	LORAWAN_PACKAGE_ID_COMPLIANCE = 0,
 	LORAWAN_PACKAGE_ID_CLOCK_SYNC = 1,
 	LORAWAN_PACKAGE_ID_REMOTE_MULTICAST_SETUP = 2,
-	LORAWAN_PACKAGE_ID_FRAG_DATA_BLOCK = 3,
+	LORAWAN_PACKAGE_ID_FRAG_TRANSPORT_BLOCK = 3,
 };
 
 /**
@@ -24,7 +24,7 @@ enum lorawan_package_id {
  */
 enum lorawan_port {
 	LORAWAN_PORT_MULTICAST = 200,
-	LORAWAN_PORT_FRAG_DATA = 201,
+	LORAWAN_PORT_FRAG_TRANSPORT = 201,
 	LORAWAN_PORT_CLOCK_SYNC = 202,
 };
 
@@ -70,6 +70,6 @@ int fuota_multicast_init(struct lorawan_fuota_context *fuota_ctx);
  *
  * @param fuota_ctx Fuota context providing the work queue handle
  */
-int fuota_frag_data_init(struct lorawan_fuota_context *fuota_ctx);
+int fuota_frag_transport_init(struct lorawan_fuota_context *fuota_ctx);
 
 #endif /* ZEPHYR_SUBSYS_LORAWAN_FUOTA_FUOTA_H_ */

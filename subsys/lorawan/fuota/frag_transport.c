@@ -11,7 +11,7 @@
 #include <zephyr/lorawan/lorawan.h>
 #include <zephyr/logging/log.h>
 
-LOG_MODULE_REGISTER(fuota_frag_data, CONFIG_LORAWAN_FUOTA_LOG_LEVEL);
+LOG_MODULE_REGISTER(fuota_frag_transport, CONFIG_LORAWAN_FUOTA_LOG_LEVEL);
 
 /**
  * Select LoRaWAN Fragmented Data Block Transport Specification
@@ -19,23 +19,23 @@ LOG_MODULE_REGISTER(fuota_frag_data, CONFIG_LORAWAN_FUOTA_LOG_LEVEL);
  * 1: TS004-1.0.0 (as used in LoRaMAC-node v4.5.x and v4.6.x)
  * 2: TS004-2.0.0 (not fully implemented)
  */
-#define FRAG_DATA_PACKAGE_VERSION CONFIG_LORAWAN_FUOTA_SPEC_VERSION
+#define FRAG_TRANSPORT_PACKAGE_VERSION CONFIG_LORAWAN_FUOTA_SPEC_VERSION
 
-/* maximum length of frag_data answers */
-#define MAX_FRAG_DATA_ANS_LEN 5
+/* maximum length of frag_transport answers */
+#define MAX_FRAG_TRANSPORT_ANS_LEN 5
 
-enum frag_data_commands {
-	FRAG_DATA_CMD_PKG_VERSION         = 0x00,
-	FRAG_DATA_CMD_FRAG_STATUS         = 0x01,
-	FRAG_DATA_CMD_FRAG_SESSION_SETUP  = 0x02,
-	FRAG_DATA_CMD_FRAG_SESSION_DELETE = 0x03,
-#if FRAG_DATA_PACKAGE_VERSION >= 2
-	FRAG_DATA_CMD_BLOCK_RECEIVED      = 0x04,
-#endif /* FRAG_DATA_PACKAGE_VERSION */
-	FRAG_DATA_CMD_DATA_FRAGMENT       = 0x08,
+enum frag_transport_commands {
+	FRAG_TRANSPORT_CMD_PKG_VERSION         = 0x00,
+	FRAG_TRANSPORT_CMD_FRAG_STATUS         = 0x01,
+	FRAG_TRANSPORT_CMD_FRAG_SESSION_SETUP  = 0x02,
+	FRAG_TRANSPORT_CMD_FRAG_SESSION_DELETE = 0x03,
+#if FRAG_TRANSPORT_PACKAGE_VERSION >= 2
+	FRAG_TRANSPORT_CMD_BLOCK_RECEIVED      = 0x04,
+#endif /* FRAG_TRANSPORT_PACKAGE_VERSION */
+	FRAG_TRANSPORT_CMD_DATA_FRAGMENT       = 0x08,
 };
 
-struct frag_data_context {
+struct frag_transport_context {
 	/** Stores if this session is active */
 	bool is_active;
 	union {
@@ -58,10 +58,10 @@ struct frag_data_context {
 			uint8_t block_ack_delay: 3;
 			/** Used fragmentation algorithm (0 for forward error correction) */
 			uint8_t frag_algo: 3;
-#if FRAG_DATA_PACKAGE_VERSION >= 2
+#if FRAG_TRANSPORT_PACKAGE_VERSION >= 2
 			/** Specifies if full block reception should be ACKed */
 			uint8_t ack_reception : 1;
-#endif /* FRAG_DATA_PACKAGE_VERSION */
+#endif /* FRAG_TRANSPORT_PACKAGE_VERSION */
 		};
 	};
 	/** Padding in the last fragment if total size is not a multiple of frag_size */
@@ -78,10 +78,10 @@ struct frag_data_context {
 static struct k_work_q *workq;
 
 static struct k_work_delayable tx_work;
-static uint8_t tx_buf[3 * MAX_FRAG_DATA_ANS_LEN];
+static uint8_t tx_buf[3 * MAX_FRAG_TRANSPORT_ANS_LEN];
 static uint8_t tx_pos;
 
-static struct frag_data_context ctx[LORAMAC_MAX_MC_CTX];
+static struct frag_transport_context ctx[LORAMAC_MAX_MC_CTX];
 
 static int8_t frag_decoder_write(uint32_t addr, uint8_t *data, uint32_t size)
 {
@@ -104,23 +104,23 @@ static void frag_decoder_finish(void)
 	LOG_DBG("frag decoder finish");
 }
 
-static void frag_data_tx_handler(struct k_work *work)
+static void frag_transport_tx_handler(struct k_work *work)
 {
 	int err;
 
-	err = lorawan_send(LORAWAN_PORT_FRAG_DATA, tx_buf, tx_pos, LORAWAN_MSG_UNCONFIRMED);
+	err = lorawan_send(LORAWAN_PORT_FRAG_TRANSPORT, tx_buf, tx_pos, LORAWAN_MSG_UNCONFIRMED);
 	if (err) {
 		LOG_ERR("Sending frag data answer failed: %d", err);
 	}
 }
 
-static void frag_data_package_callback(uint8_t port, bool data_pending, int16_t rssi, int8_t snr,
-				       uint8_t len, const uint8_t *rx_buf)
+static void frag_transport_package_callback(uint8_t port, bool data_pending, int16_t rssi,
+					    int8_t snr, uint8_t len, const uint8_t *rx_buf)
 {
 	uint8_t rx_pos = 0;
 	bool delayed_answer = false;
 
-	if (port != LORAWAN_PORT_FRAG_DATA) {
+	if (port != LORAWAN_PORT_FRAG_TRANSPORT) {
 		LOG_ERR("Wrong port %d for frag data package", port);
 		return;
 	}
@@ -139,14 +139,14 @@ static void frag_data_package_callback(uint8_t port, bool data_pending, int16_t 
 		LOG_DBG("Received frag data cmd 0x%.2x", command_id);
 
 		switch (command_id) {
-		case FRAG_DATA_CMD_PKG_VERSION:
+		case FRAG_TRANSPORT_CMD_PKG_VERSION:
 			/* ToDo: Don't process in case of multicast session */
 
-			tx_buf[tx_pos++] = FRAG_DATA_CMD_PKG_VERSION;
-			tx_buf[tx_pos++] = LORAWAN_PACKAGE_ID_FRAG_DATA_BLOCK;
-			tx_buf[tx_pos++] = FRAG_DATA_PACKAGE_VERSION;
+			tx_buf[tx_pos++] = FRAG_TRANSPORT_CMD_PKG_VERSION;
+			tx_buf[tx_pos++] = LORAWAN_PACKAGE_ID_FRAG_TRANSPORT_BLOCK;
+			tx_buf[tx_pos++] = FRAG_TRANSPORT_PACKAGE_VERSION;
 			break;
-		case FRAG_DATA_CMD_FRAG_STATUS: {
+		case FRAG_TRANSPORT_CMD_FRAG_STATUS: {
 			uint8_t frag_status = rx_buf[rx_pos++] & 0x07;
 			uint8_t participants = frag_status & 0x01;
 			uint8_t index = frag_status >> 1;
@@ -154,7 +154,7 @@ static void frag_data_package_callback(uint8_t port, bool data_pending, int16_t 
 			ctx[index].decoder_status = FragDecoderGetStatus();
 
 			if (participants == 1 || ctx[index].decoder_status.FragNbLost > 0) {
-				tx_buf[tx_pos++] = FRAG_DATA_CMD_FRAG_STATUS;
+				tx_buf[tx_pos++] = FRAG_TRANSPORT_CMD_FRAG_STATUS;
 				tx_buf[tx_pos++] = ctx[index].decoder_status.FragNbRx & 0xFF;
 				tx_buf[tx_pos++] = (index << 6) |
 					((ctx[index].decoder_status.FragNbRx >> 8) & 0x3F);
@@ -165,7 +165,7 @@ static void frag_data_package_callback(uint8_t port, bool data_pending, int16_t 
 			}
 			break;
 		}
-		case FRAG_DATA_CMD_FRAG_SESSION_SETUP: {
+		case FRAG_TRANSPORT_CMD_FRAG_SESSION_SETUP: {
 			/* ToDo: Don't process in case of multicast session */
 
 			uint8_t frag_session = rx_buf[rx_pos++] & 0x3F;
@@ -224,12 +224,12 @@ static void frag_data_package_callback(uint8_t port, bool data_pending, int16_t 
 						&ctx[index].decoder_callbacks);
 			}
 
-			tx_buf[tx_pos++] = FRAG_DATA_CMD_FRAG_SESSION_SETUP;
+			tx_buf[tx_pos++] = FRAG_TRANSPORT_CMD_FRAG_SESSION_SETUP;
 			tx_buf[tx_pos++] = status;
 			delayed_answer = false;
 			break;
 		}
-		case FRAG_DATA_CMD_FRAG_SESSION_DELETE: {
+		case FRAG_TRANSPORT_CMD_FRAG_SESSION_DELETE: {
 			/* ToDo: Don't process in case of multicast session */
 
 			uint8_t index = rx_buf[rx_pos++] & 0x03;
@@ -243,17 +243,17 @@ static void frag_data_package_callback(uint8_t port, bool data_pending, int16_t 
 				ctx[index].is_active = false;
 			}
 
-			tx_buf[tx_pos++] = FRAG_DATA_CMD_FRAG_SESSION_DELETE;
+			tx_buf[tx_pos++] = FRAG_TRANSPORT_CMD_FRAG_SESSION_DELETE;
 			tx_buf[tx_pos++] = status;
 			delayed_answer = false;
 			break;
 		}
-#if FRAG_DATA_PACKAGE_VERSION >= 2
-		case FRAG_DATA_CMD_BLOCK_RECEIVED:
+#if FRAG_TRANSPORT_PACKAGE_VERSION >= 2
+		case FRAG_TRANSPORT_CMD_BLOCK_RECEIVED:
 			LOG_ERR("FragDataBlockReceivedAns not implemented");
 			return;
-#endif /* FRAG_DATA_PACKAGE_VERSION */
-		case FRAG_DATA_CMD_DATA_FRAGMENT: {
+#endif /* FRAG_TRANSPORT_PACKAGE_VERSION */
+		case FRAG_TRANSPORT_CMD_DATA_FRAGMENT: {
 			uint8_t frag_index_n;
 
 			frag_index_n = rx_buf[rx_pos++];
@@ -295,15 +295,15 @@ static void frag_data_package_callback(uint8_t port, bool data_pending, int16_t 
 }
 
 static struct lorawan_downlink_cb downlink_cb = {
-	.port = (uint8_t)LORAWAN_PORT_FRAG_DATA,
-	.cb = frag_data_package_callback
+	.port = (uint8_t)LORAWAN_PORT_FRAG_TRANSPORT,
+	.cb = frag_transport_package_callback
 };
 
-int fuota_frag_data_init(struct lorawan_fuota_context *fuota_ctx)
+int fuota_frag_transport_init(struct lorawan_fuota_context *fuota_ctx)
 {
 	workq = &fuota_ctx->work_queue;
 
-	k_work_init_delayable(&tx_work, frag_data_tx_handler);
+	k_work_init_delayable(&tx_work, frag_transport_tx_handler);
 
 	lorawan_register_downlink_callback(&downlink_cb);
 
