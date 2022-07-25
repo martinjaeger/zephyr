@@ -6,6 +6,7 @@
 
 #include "fuota.h"
 
+#include <zephyr/dfu/mcuboot.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/storage/flash_map.h>
 
@@ -49,7 +50,14 @@ int8_t fuota_frag_flash_read(uint32_t addr, uint8_t *data, uint32_t size)
 
 void fuota_frag_flash_finish(void)
 {
+	int err;
+
 	flash_area_close(fa);
 
 	LOG_DBG("All fragments written to flash");
+
+	err = boot_request_upgrade(BOOT_UPGRADE_TEST);
+	if (err) {
+		LOG_ERR("Failed to request upgrade (err %d)", err);
+	}
 }
