@@ -7,33 +7,49 @@
 #include "fuota.h"
 
 #include <zephyr/logging/log.h>
+#include <zephyr/storage/flash_map.h>
 
 LOG_MODULE_REGISTER(fuota_frag_flash, CONFIG_LORAWAN_FUOTA_LOG_LEVEL);
 
+#define TARGET_IMAGE_AREA FLASH_AREA_ID(image_1)
+
+static const struct flash_area *fa;
+
 int fuota_frag_flash_init(void)
 {
-	LOG_DBG("mass-erase flash");
+	int err;
 
-	return 0;
+	err = flash_area_open(TARGET_IMAGE_AREA, &fa);
+	if (err) {
+		return err;
+	}
+
+	LOG_DBG("Starting to erase flash area");
+
+	err = flash_area_erase(fa, 0, fa->fa_size);
+
+	LOG_DBG("Finished erasing flash area");
+
+	return err;
 }
 
 int8_t fuota_frag_flash_write(uint32_t addr, uint8_t *data, uint32_t size)
 {
-	LOG_DBG("write %u bytes to addr 0x%x", size, addr);
+	LOG_DBG("Writing %u bytes to addr 0x%x", size, addr);
 
-	return 0;
+	return flash_area_write(fa, addr, data, size);
 }
 
 int8_t fuota_frag_flash_read(uint32_t addr, uint8_t *data, uint32_t size)
 {
-	LOG_DBG("read %u bytes from addr 0x%x", size, addr);
+	LOG_DBG("Reading %u bytes from addr 0x%x", size, addr);
 
-	return 0;
+	return flash_area_read(fa, addr, data, size);
 }
 
 void fuota_frag_flash_finish(void)
 {
-	/* ToDo: Finish flash writing and reboot? */
+	flash_area_close(fa);
 
-	LOG_DBG("frag decoder finish");
+	LOG_DBG("All fragments written to flash");
 }
