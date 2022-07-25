@@ -72,4 +72,37 @@ int fuota_multicast_init(struct lorawan_fuota_context *fuota_ctx);
  */
 int fuota_frag_transport_init(struct lorawan_fuota_context *fuota_ctx);
 
+/**
+ * Write received data fragment to flash
+ *
+ * This function is called by FragDecoder from LoRaMAC-node stack.
+ *
+ * @param addr Flash address relative to start of slot
+ * @param data Data buffer
+ * @param size Number of bytes in the buffer
+ *
+ * @returns 0 for success, otherwise negative error code
+ */
+int8_t fuota_frag_flash_write(uint32_t addr, uint8_t *data, uint32_t size);
+
+/**
+ * Read back data from flash
+ *
+ * This function is called by FragDecoder from LoRaMAC-node stack.
+ *
+ * @param addr Flash address relative to start of slot
+ * @param data Data buffer
+ * @param size Number of bytes in the buffer
+ *
+ * @returns 0 for success, otherwise negative error code
+ */
+int8_t fuota_frag_flash_read(uint32_t addr, uint8_t *data, uint32_t size);
+
+/**
+ * Finalize flashing after sufficient fragments have been received.
+ *
+ * After this call the new firmware is ready to be checked and booted.
+ */
+void fuota_frag_flash_finish(void);
+
 #endif /* ZEPHYR_SUBSYS_LORAWAN_FUOTA_FUOTA_H_ */

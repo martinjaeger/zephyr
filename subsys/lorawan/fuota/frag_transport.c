@@ -83,27 +83,6 @@ static uint8_t tx_pos;
 
 static struct frag_transport_context ctx[LORAMAC_MAX_MC_CTX];
 
-static int8_t frag_decoder_write(uint32_t addr, uint8_t *data, uint32_t size)
-{
-	LOG_DBG("write %u bytes to addr 0x%x", size, addr);
-
-	return 0;
-}
-
-static int8_t frag_decoder_read(uint32_t addr, uint8_t *data, uint32_t size)
-{
-	LOG_DBG("read %u bytes from addr 0x%x", size, addr);
-
-	return 0;
-}
-
-static void frag_decoder_finish(void)
-{
-	/* ToDo: Finish flash writing and reboot? */
-
-	LOG_DBG("frag decoder finish");
-}
-
 static void frag_transport_tx_handler(struct k_work *work)
 {
 	int err;
@@ -218,8 +197,10 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 
 			if ((status & 0x1F) == 0)	{
 				ctx[index].is_active = true;
-				ctx[index].decoder_callbacks.FragDecoderWrite = frag_decoder_write;
-				ctx[index].decoder_callbacks.FragDecoderRead = frag_decoder_read;
+				ctx[index].decoder_callbacks.FragDecoderWrite =
+					fuota_frag_flash_write;
+				ctx[index].decoder_callbacks.FragDecoderRead =
+					fuota_frag_flash_read;
 				FragDecoderInit(ctx[index].nb_frag, ctx[index].frag_size,
 						&ctx[index].decoder_callbacks);
 			}
@@ -277,7 +258,7 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 					/* fragmented data transfer finished */
 					ctx[index].decoder_process_status =
 									FRAG_SESSION_NOT_STARTED;
-					frag_decoder_finish();
+					fuota_frag_flash_finish();
 				}
 			}
 			rx_pos += ctx[index].frag_size;
