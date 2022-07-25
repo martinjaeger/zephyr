@@ -196,13 +196,22 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 			/* ToDo: Handle Wrong Descriptor error */
 
 			if ((status & 0x1F) == 0)	{
-				ctx[index].is_active = true;
+				FragDecoderInit(ctx[index].nb_frag, ctx[index].frag_size,
+						&ctx[index].decoder_callbacks);
+
+				/*
+				 * Assign callbacks after initialization to prevent the FragDecoder
+				 * from writing byte-wise 0xFF to the entire flash. Instead, erase
+				 * flash properly with own implementation.
+				 */
 				ctx[index].decoder_callbacks.FragDecoderWrite =
 					fuota_frag_flash_write;
 				ctx[index].decoder_callbacks.FragDecoderRead =
 					fuota_frag_flash_read;
-				FragDecoderInit(ctx[index].nb_frag, ctx[index].frag_size,
-						&ctx[index].decoder_callbacks);
+				ctx[index].is_active = true;
+
+				/* ToDo: think about offloading into fuota work queue */
+				fuota_frag_flash_init();
 			}
 
 			tx_buf[tx_pos++] = FRAG_TRANSPORT_CMD_FRAG_SESSION_SETUP;

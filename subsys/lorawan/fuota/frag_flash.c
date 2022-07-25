@@ -10,6 +10,13 @@
 
 LOG_MODULE_REGISTER(fuota_frag_flash, CONFIG_LORAWAN_FUOTA_LOG_LEVEL);
 
+int fuota_frag_flash_init(void)
+{
+	LOG_DBG("mass-erase flash");
+
+	return 0;
+}
+
 int8_t fuota_frag_flash_write(uint32_t addr, uint8_t *data, uint32_t size)
 {
 	LOG_DBG("write %u bytes to addr 0x%x", size, addr);

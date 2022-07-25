@@ -73,6 +73,15 @@ int fuota_multicast_init(struct lorawan_fuota_context *fuota_ctx);
 int fuota_frag_transport_init(struct lorawan_fuota_context *fuota_ctx);
 
 /**
+ * Initialize flash driver and prepare partition for new firmware image.
+ *
+ * This function mass-erases the flash partition and may take a while to return.
+ *
+ * @returns 0 for success, otherwise negative error code
+ */
+int fuota_frag_flash_init(void);
+
+/**
  * Write received data fragment to flash
  *
  * This function is called by FragDecoder from LoRaMAC-node stack.
