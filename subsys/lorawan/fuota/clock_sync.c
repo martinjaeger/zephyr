@@ -266,11 +266,19 @@ static int clock_sync_app_time_req(void)
 
 static void clock_sync_resync_handler(struct k_work *work)
 {
+	uint32_t periodicity = ctx.periodicity;
+	static int counter;
+
 	clock_sync_app_time_req();
+
+	if (++counter < 5) {
+		/* reduced periodicity for testing to sync quickly */
+		periodicity = 15;
+	}
 
 	/* ToDo: Add random value to periodicity (see spec) */
 	k_work_reschedule_for_queue(&fuota_ctx->work_queue, &ctx.resync_work,
-		K_SECONDS(ctx.periodicity));
+		K_SECONDS(periodicity));
 }
 
 static struct lorawan_downlink_cb downlink_cb = {
