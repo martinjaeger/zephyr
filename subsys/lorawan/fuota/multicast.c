@@ -13,14 +13,6 @@
 
 LOG_MODULE_REGISTER(fuota_multicast, CONFIG_LORAWAN_FUOTA_LOG_LEVEL);
 
-/**
- * Select LoRaWAN Remote Multicast Setup Specification
- *
- * 1: TS005-1.0.0 (as used in LoRaMAC-node v4.5.x and v4.6.x)
- * 2: TS005-2.0.0 (not fully implemented)
- */
-#define MULTICAST_PACKAGE_VERSION CONFIG_LORAWAN_FUOTA_SPEC_VERSION
-
 /* maximum length of multicast answers */
 #define MAX_MULTICAST_ANS_LEN 5
 
@@ -118,7 +110,7 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 		case MULTICAST_CMD_PKG_VERSION:
 			tx_buf[tx_pos++] = MULTICAST_CMD_PKG_VERSION;
 			tx_buf[tx_pos++] = LORAWAN_PACKAGE_ID_REMOTE_MULTICAST_SETUP;
-			tx_buf[tx_pos++] = MULTICAST_PACKAGE_VERSION;
+			tx_buf[tx_pos++] = CONFIG_LORAWAN_REMOTE_MULTICAST_VERSION;
 			LOG_DBG("PackageVersionReq");
 			break;
 		case MULTICAST_CMD_MC_GROUP_STATUS:

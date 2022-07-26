@@ -13,14 +13,6 @@
 
 LOG_MODULE_REGISTER(fuota_frag_transport, CONFIG_LORAWAN_FUOTA_LOG_LEVEL);
 
-/**
- * Select LoRaWAN Fragmented Data Block Transport Specification
- *
- * 1: TS004-1.0.0 (as used in LoRaMAC-node v4.5.x and v4.6.x)
- * 2: TS004-2.0.0 (not fully implemented)
- */
-#define FRAG_TRANSPORT_PACKAGE_VERSION CONFIG_LORAWAN_FUOTA_SPEC_VERSION
-
 /* maximum length of frag_transport answers */
 #define MAX_FRAG_TRANSPORT_ANS_LEN 5
 
@@ -29,9 +21,9 @@ enum frag_transport_commands {
 	FRAG_TRANSPORT_CMD_FRAG_STATUS         = 0x01,
 	FRAG_TRANSPORT_CMD_FRAG_SESSION_SETUP  = 0x02,
 	FRAG_TRANSPORT_CMD_FRAG_SESSION_DELETE = 0x03,
-#if FRAG_TRANSPORT_PACKAGE_VERSION >= 2
+#if CONFIG_LORAWAN_FRAG_TRANSPORT_VERSION >= 2
 	FRAG_TRANSPORT_CMD_BLOCK_RECEIVED      = 0x04,
-#endif /* FRAG_TRANSPORT_PACKAGE_VERSION */
+#endif /* CONFIG_LORAWAN_FRAG_TRANSPORT_VERSION */
 	FRAG_TRANSPORT_CMD_DATA_FRAGMENT       = 0x08,
 };
 
@@ -58,10 +50,10 @@ struct frag_transport_context {
 			uint8_t block_ack_delay: 3;
 			/** Used fragmentation algorithm (0 for forward error correction) */
 			uint8_t frag_algo: 3;
-#if FRAG_TRANSPORT_PACKAGE_VERSION >= 2
+#if CONFIG_LORAWAN_FRAG_TRANSPORT_VERSION >= 2
 			/** Specifies if full block reception should be ACKed */
 			uint8_t ack_reception : 1;
-#endif /* FRAG_TRANSPORT_PACKAGE_VERSION */
+#endif /* CONFIG_LORAWAN_FRAG_TRANSPORT_VERSION */
 		};
 	};
 	/** Padding in the last fragment if total size is not a multiple of frag_size */
@@ -123,7 +115,7 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 
 			tx_buf[tx_pos++] = FRAG_TRANSPORT_CMD_PKG_VERSION;
 			tx_buf[tx_pos++] = LORAWAN_PACKAGE_ID_FRAG_TRANSPORT_BLOCK;
-			tx_buf[tx_pos++] = FRAG_TRANSPORT_PACKAGE_VERSION;
+			tx_buf[tx_pos++] = CONFIG_LORAWAN_FRAG_TRANSPORT_VERSION;
 			break;
 		case FRAG_TRANSPORT_CMD_FRAG_STATUS: {
 			uint8_t frag_status = rx_buf[rx_pos++] & 0x07;
@@ -238,11 +230,11 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 			delayed_answer = false;
 			break;
 		}
-#if FRAG_TRANSPORT_PACKAGE_VERSION >= 2
+#if CONFIG_LORAWAN_FRAG_TRANSPORT_VERSION >= 2
 		case FRAG_TRANSPORT_CMD_BLOCK_RECEIVED:
 			LOG_ERR("FragDataBlockReceivedAns not implemented");
 			return;
-#endif /* FRAG_TRANSPORT_PACKAGE_VERSION */
+#endif /* CONFIG_LORAWAN_FRAG_TRANSPORT_VERSION */
 		case FRAG_TRANSPORT_CMD_DATA_FRAGMENT: {
 			uint8_t frag_index_n;
 

@@ -27,18 +27,44 @@ config LORAWAN_FUOTA_THREAD_STACK_SIZE
 	help
 	  Stack size of thread running the FUOTA service in the background.
 
-config LORAWAN_FUOTA_SPEC_VERSION
-	int "Revision of the Spec to be used"
+config LORAWAN_APP_CLOCK_SYNC_VERSION
+	int "Application Layer Clock Synchronization Specification"
 	range 1 2
 	default 1
 	help
-	  The LoRa Alliance released different versions of the FUOTA
-	  specification packages.
+	  The implementation considers different versions of the specification
+	  released by the LoRa Alliance.
 
-	  Version 1.0.0 from 2018 is the default, which is also used in the
-	  official LoRaMAC-node implementation up to v4.6.
+	  Select one of the following revisions:
 
-	  Version 2.0.0 from 2022 is not yet fully supported, but can be
-	  enabled for testing purposes.
+	  1: TS003-1.0.0
+	  2: TS003-2.0.0 (not fully supported, only for testing)
+
+config LORAWAN_FRAG_TRANSPORT_VERSION
+	int "Fragmented Data Block Transport Specification"
+	range 1 2
+	default 1
+	help
+	  The implementation considers different versions of the specification
+	  released by the LoRa Alliance.
+
+	  Select one of the following revisions:
+
+	  1: TS004-1.0.0
+	  2: TS004-2.0.0 (not fully supported, only for testing)
+
+config LORAWAN_REMOTE_MULTICAST_VERSION
+	int "Remote Multicast Setup Specification"
+	range 1 1
+	default 1
+	help
+	  The implementation considers different versions of the specification
+	  released by the LoRa Alliance.
+
+	  Select one of the following revisions:
+
+	  1: TS005-1.0.0
+
+	  (TS005-2.0.0 not yet implemented)
 
 endif # LORAWAN_FUOTA

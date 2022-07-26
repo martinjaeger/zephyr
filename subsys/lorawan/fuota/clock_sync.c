@@ -12,14 +12,6 @@
 
 LOG_MODULE_REGISTER(fuota_clock_sync, CONFIG_LORAWAN_FUOTA_LOG_LEVEL);
 
-/**
- * Select LoRaWAN Application Layer Clock Synchronization Specification
- *
- * 1: TS003-1.0.0 (as used in LoRaMAC-node v4.5.x and v4.6.x)
- * 2: TS003-2.0.0 (not fully implemented)
- */
-#define CLOCK_SYNC_PACKAGE_VERSION CONFIG_LORAWAN_FUOTA_SPEC_VERSION
-
 /* maximum length of clock sync answers */
 #define MAX_CLOCK_SYNC_ANS_LEN 6
 
@@ -124,7 +116,7 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 		case CLOCK_SYNC_CMD_PKG_VERSION:
 			ctx.tx_buf[ctx.tx_pos++] = CLOCK_SYNC_CMD_PKG_VERSION;
 			ctx.tx_buf[ctx.tx_pos++] = LORAWAN_PACKAGE_ID_CLOCK_SYNC;
-			ctx.tx_buf[ctx.tx_pos++] = CLOCK_SYNC_PACKAGE_VERSION;
+			ctx.tx_buf[ctx.tx_pos++] = CONFIG_LORAWAN_APP_CLOCK_SYNC_VERSION;
 			LOG_DBG("PackageVersionReq");
 			break;
 		case CLOCK_SYNC_CMD_APP_TIME: {
@@ -186,12 +178,15 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 
 static int clock_sync_app_time_req(void)
 {
+	uint8_t tx_pos = 0;
+	uint8_t tx_buf[6];
+
+#if CONFIG_LORAWAN_APP_CLOCK_SYNC_VERSION == 1
 	MibRequestConfirm_t mib_req;
 	bool adr_enabled_prev;
 	uint8_t nb_trans_prev;
 	uint8_t datarate_prev;
-	uint8_t tx_pos = 0;
-	uint8_t tx_buf[6];
+#endif
 
 	if (LoRaMacIsBusy()) {
 		LOG_ERR("LoRaMAC is busy");
@@ -207,6 +202,7 @@ static int clock_sync_app_time_req(void)
 
 	LOG_DBG("Sending clock sync AppTimeReq (token %d)", ctx.req_token);
 
+#if CONFIG_LORAWAN_APP_CLOCK_SYNC_VERSION == 1
 	/* Disable ADR */
 	mib_req.Type = MIB_ADR;
 	LoRaMacMibGetRequestConfirm(&mib_req);
@@ -225,6 +221,7 @@ static int clock_sync_app_time_req(void)
 	mib_req.Type = MIB_CHANNELS_DATARATE;
 	LoRaMacMibGetRequestConfirm(&mib_req);
 	datarate_prev = mib_req.Param.ChannelsDatarate;
+#endif /* CONFIG_LORAWAN_APP_CLOCK_SYNC_VERSION == 1 */
 
 	int err = lorawan_send(LORAWAN_PORT_CLOCK_SYNC, tx_buf, tx_pos,
 			LORAWAN_MSG_UNCONFIRMED);
@@ -232,6 +229,7 @@ static int clock_sync_app_time_req(void)
 		LOG_ERR("Sending clock sync AppTimeReq failed: %d", err);
 	}
 
+#if CONFIG_LORAWAN_APP_CLOCK_SYNC_VERSION == 1
 	/* Revert ADR setting */
 	mib_req.Type = MIB_ADR;
 	mib_req.Param.AdrEnable = adr_enabled_prev;
@@ -246,6 +244,7 @@ static int clock_sync_app_time_req(void)
 	mib_req.Type = MIB_CHANNELS_DATARATE;
 	mib_req.Param.ChannelsDatarate = datarate_prev;
 	LoRaMacMibSetRequestConfirm(&mib_req);
+#endif /* CONFIG_LORAWAN_APP_CLOCK_SYNC_VERSION == 1 */
 
 	if (ctx.nb_transmissions > 0) {
 		if (!err) {
