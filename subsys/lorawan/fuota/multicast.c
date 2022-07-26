@@ -229,14 +229,10 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 					LOG_DBG("Starting class C session in %d s",
 						time_to_start);
 
-					k_work_init_delayable(&ctx[id].session_start_work,
-						multicast_session_start);
 					k_work_reschedule_for_queue(workq,
 						&ctx[id].session_start_work,
 						K_SECONDS(time_to_start));
 
-					k_work_init_delayable(&ctx[id].session_stop_work,
-						multicast_session_stop);
 					k_work_reschedule_for_queue(workq,
 						&ctx[id].session_stop_work,
 						K_SECONDS(time_to_start + ctx[id].session_timeout));
@@ -289,6 +285,11 @@ int fuota_multicast_init(struct lorawan_fuota_context *fuota_ctx)
 	workq = &fuota_ctx->work_queue;
 
 	k_work_init_delayable(&tx_work, multicast_tx_handler);
+
+	for (int i = 0; i < ARRAY_SIZE(ctx); i++) {
+		k_work_init_delayable(&ctx[i].session_start_work, multicast_session_start);
+		k_work_init_delayable(&ctx[i].session_stop_work, multicast_session_stop);
+	}
 
 	lorawan_register_downlink_callback(&downlink_cb);
 
