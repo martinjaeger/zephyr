@@ -35,6 +35,12 @@ struct lorawan_fuota_context {
 	 * parallel.
 	 */
 	struct k_work_q work_queue;
+
+	/* Mutex to protect access to below session information */
+	struct k_mutex mutex;
+
+	/* Number of active class C sessions */
+	int active_class_c_sessions;
 };
 
 /**

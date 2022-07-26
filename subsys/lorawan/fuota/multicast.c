@@ -41,7 +41,7 @@ struct multicast_context {
 	struct k_work_delayable session_stop_work;
 };
 
-static struct k_work_q *workq;
+static struct lorawan_fuota_context *fuota_ctx;
 
 static struct k_work_delayable tx_work;
 static uint8_t tx_buf[3 * MAX_MULTICAST_ANS_LEN];
@@ -53,26 +53,36 @@ static void multicast_session_start(struct k_work *work)
 {
 	int err;
 
+	k_mutex_lock(&fuota_ctx->mutex, K_FOREVER);
+
 	err = lorawan_set_class(LORAWAN_CLASS_C);
 	if (err) {
 		LOG_ERR("Failed to switch to class C: %d", err);
 	} else {
 		LOG_DBG("Switched to class C");
 	}
+
+	fuota_ctx->active_class_c_sessions++;
+	k_mutex_unlock(&fuota_ctx->mutex);
 }
 
 static void multicast_session_stop(struct k_work *work)
 {
 	int err;
 
-	/* ToDo: Check if there are other MC sessions in progress before switching class */
+	k_mutex_lock(&fuota_ctx->mutex, K_FOREVER);
 
-	err = lorawan_set_class(LORAWAN_CLASS_A);
-	if (err) {
-		LOG_ERR("Failed to revert to class A: %d", err);
-	} else {
-		LOG_DBG("Reverted to class A");
+	fuota_ctx->active_class_c_sessions--;
+	if (fuota_ctx->active_class_c_sessions == 0) {
+		err = lorawan_set_class(LORAWAN_CLASS_A);
+		if (err) {
+			LOG_ERR("Failed to revert to class A: %d", err);
+		} else {
+			LOG_DBG("Reverted to class A");
+		}
 	}
+
+	k_mutex_unlock(&fuota_ctx->mutex);
 }
 
 static void multicast_tx_handler(struct k_work *work)
@@ -229,11 +239,11 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 					LOG_DBG("Starting class C session in %d s",
 						time_to_start);
 
-					k_work_reschedule_for_queue(workq,
+					k_work_reschedule_for_queue(&fuota_ctx->work_queue,
 						&ctx[id].session_start_work,
 						K_SECONDS(time_to_start));
 
-					k_work_reschedule_for_queue(workq,
+					k_work_reschedule_for_queue(&fuota_ctx->work_queue,
 						&ctx[id].session_stop_work,
 						K_SECONDS(time_to_start + ctx[id].session_timeout));
 
@@ -271,7 +281,7 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 
 	if (tx_pos > 0) {
 		/* ToDo: Random delay 2+-1 seconds according to RP002-1.0.3, chapter 2.3 */
-		k_work_reschedule_for_queue(workq, &tx_work, K_SECONDS(2));
+		k_work_reschedule_for_queue(&fuota_ctx->work_queue, &tx_work, K_SECONDS(2));
 	}
 }
 
@@ -280,9 +290,9 @@ static struct lorawan_downlink_cb downlink_cb = {
 	.cb = multicast_package_callback
 };
 
-int fuota_multicast_init(struct lorawan_fuota_context *fuota_ctx)
+int fuota_multicast_init(struct lorawan_fuota_context *fctx)
 {
-	workq = &fuota_ctx->work_queue;
+	fuota_ctx = fctx;
 
 	k_work_init_delayable(&tx_work, multicast_tx_handler);
 

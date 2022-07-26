@@ -26,8 +26,6 @@ enum clock_sync_commands {
 };
 
 struct clock_sync_context {
-	struct k_work_q *workq;
-
 	/* work item for regular (re-)sync requests (uplink messages) */
 	struct k_work_delayable resync_work;
 
@@ -51,6 +49,8 @@ struct clock_sync_context {
 	 */
 	uint32_t periodicity;
 };
+
+static struct lorawan_fuota_context *fuota_ctx;
 
 static struct clock_sync_context ctx;
 
@@ -160,7 +160,8 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 
 			if (nb_transmissions != 0) {
 				ctx.nb_transmissions = nb_transmissions;
-				k_work_reschedule_for_queue(ctx.workq, &ctx.resync_work, K_NO_WAIT);
+				k_work_reschedule_for_queue(&fuota_ctx->work_queue,
+					&ctx.resync_work, K_NO_WAIT);
 			}
 
 			LOG_DBG("ForceDeviceResyncCmd nb_transmissions: %u", nb_transmissions);
@@ -172,7 +173,7 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 	}
 
 	if (ctx.tx_pos > 0) {
-		k_work_submit_to_queue(ctx.workq, &ctx.tx_work);
+		k_work_submit_to_queue(&fuota_ctx->work_queue, &ctx.tx_work);
 	}
 }
 
@@ -190,6 +191,12 @@ static int clock_sync_app_time_req(void)
 
 	if (LoRaMacIsBusy()) {
 		LOG_ERR("LoRaMAC is busy");
+		return -EBUSY;
+	}
+
+	if (fuota_ctx->active_class_c_sessions > 0) {
+		/* avoid disturbing the session and causing potential package loss */
+		LOG_DBG("AppTimeReq not sent because of active class C session");
 		return -EBUSY;
 	}
 
@@ -250,7 +257,7 @@ static int clock_sync_app_time_req(void)
 		if (!err) {
 			ctx.nb_transmissions--;
 		}
-		k_work_reschedule_for_queue(ctx.workq, &ctx.resync_work,
+		k_work_reschedule_for_queue(&fuota_ctx->work_queue, &ctx.resync_work,
 			K_SECONDS(CLOCK_RESYNC_DELAY));
 	}
 
@@ -262,7 +269,8 @@ static void clock_sync_resync_handler(struct k_work *work)
 	clock_sync_app_time_req();
 
 	/* ToDo: Add random value to periodicity (see spec) */
-	k_work_reschedule_for_queue(ctx.workq, &ctx.resync_work, K_SECONDS(ctx.periodicity));
+	k_work_reschedule_for_queue(&fuota_ctx->work_queue, &ctx.resync_work,
+		K_SECONDS(ctx.periodicity));
 }
 
 static struct lorawan_downlink_cb downlink_cb = {
@@ -270,9 +278,9 @@ static struct lorawan_downlink_cb downlink_cb = {
 	.cb = clock_sync_package_callback
 };
 
-void fuota_clock_sync_start(struct lorawan_fuota_context *fuota_ctx)
+void fuota_clock_sync_start(struct lorawan_fuota_context *fctx)
 {
-	ctx.workq = &fuota_ctx->work_queue;
+	fuota_ctx = fctx;
 	ctx.periodicity = 128; /* lowest valid value for testing */
 
 	k_work_init(&ctx.tx_work, clock_sync_tx_handler);
@@ -280,7 +288,7 @@ void fuota_clock_sync_start(struct lorawan_fuota_context *fuota_ctx)
 	lorawan_register_downlink_callback(&downlink_cb);
 
 	k_work_init_delayable(&ctx.resync_work, clock_sync_resync_handler);
-	k_work_reschedule_for_queue(ctx.workq, &ctx.resync_work, K_NO_WAIT);
+	k_work_reschedule_for_queue(&fuota_ctx->work_queue, &ctx.resync_work, K_NO_WAIT);
 }
 
 uint32_t fuota_clock_sync_get_time(void)

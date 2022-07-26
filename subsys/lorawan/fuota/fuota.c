@@ -20,6 +20,8 @@ void lorawan_start_fuota_service(void)
 			   thread_stack_area, K_THREAD_STACK_SIZEOF(thread_stack_area),
 			   CONFIG_LORAWAN_FUOTA_THREAD_PRIORITY, NULL);
 
+	k_mutex_init(&fuota_ctx.mutex);
+
 	k_thread_name_set(&fuota_ctx.work_queue.thread, "lorawan_fuota_work_q");
 
 	fuota_multicast_init(&fuota_ctx);
