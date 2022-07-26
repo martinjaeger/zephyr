@@ -52,12 +52,6 @@ struct clock_sync_context {
 	 */
 	int64_t time_correction;
 
-	bool app_time_req_pending;
-
-	bool adr_enabled_prev;
-	uint8_t nb_transmissions_prev;
-	uint8_t datarate_prev;
-
 	/**
 	 * AppTimeReq retransmission interval in seconds
 	 *
@@ -153,7 +147,6 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 			} else {
 				LOG_WRN("AppTimeAns with outdated token %d", token);
 			}
-
 			break;
 		}
 		case CLOCK_SYNC_CMD_DEVICE_APP_TIME_PERIODICITY: {
@@ -175,10 +168,8 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 
 			if (nb_transmissions != 0) {
 				ctx.nb_transmissions = nb_transmissions;
+				k_work_reschedule_for_queue(ctx.workq, &ctx.resync_work, K_NO_WAIT);
 			}
-
-			/* ToDo: consider nb_transmissions */
-			k_work_reschedule_for_queue(ctx.workq, &ctx.resync_work, K_NO_WAIT);
 
 			LOG_DBG("ForceDeviceResyncCmd nb_transmissions: %u", nb_transmissions);
 			break;
@@ -195,35 +186,16 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 
 static int clock_sync_app_time_req(void)
 {
+	MibRequestConfirm_t mib_req;
+	bool adr_enabled_prev;
+	uint8_t nb_trans_prev;
+	uint8_t datarate_prev;
 	uint8_t tx_pos = 0;
 	uint8_t tx_buf[6];
 
 	if (LoRaMacIsBusy()) {
 		LOG_ERR("LoRaMAC is busy");
 		return -EBUSY;
-	}
-
-	if (ctx.app_time_req_pending) {
-		MibRequestConfirm_t mib_req;
-
-		/* Disable ADR */
-		mib_req.Type = MIB_ADR;
-		LoRaMacMibGetRequestConfirm(&mib_req);
-		ctx.adr_enabled_prev = mib_req.Param.AdrEnable;
-		mib_req.Param.AdrEnable = false;
-		LoRaMacMibSetRequestConfirm(&mib_req);
-
-		/* Set NbTrans = 1 */
-		mib_req.Type = MIB_CHANNELS_NB_TRANS;
-		LoRaMacMibGetRequestConfirm(&mib_req);
-		ctx.nb_transmissions_prev = mib_req.Param.ChannelsNbTrans;
-		mib_req.Param.ChannelsNbTrans = 1;
-		LoRaMacMibSetRequestConfirm(&mib_req);
-
-		/* Store data rate */
-		mib_req.Type = MIB_CHANNELS_DATARATE;
-		LoRaMacMibGetRequestConfirm(&mib_req);
-		ctx.datarate_prev = mib_req.Param.ChannelsDatarate;
 	}
 
 	tx_buf[tx_pos++] = CLOCK_SYNC_CMD_APP_TIME;
@@ -235,12 +207,45 @@ static int clock_sync_app_time_req(void)
 
 	LOG_DBG("Sending clock sync AppTimeReq (token %d)", ctx.req_token);
 
-	ctx.app_time_req_pending = true;
+	/* Disable ADR */
+	mib_req.Type = MIB_ADR;
+	LoRaMacMibGetRequestConfirm(&mib_req);
+	adr_enabled_prev = mib_req.Param.AdrEnable;
+	mib_req.Param.AdrEnable = false;
+	LoRaMacMibSetRequestConfirm(&mib_req);
+
+	/* Set NbTrans = 1 */
+	mib_req.Type = MIB_CHANNELS_NB_TRANS;
+	LoRaMacMibGetRequestConfirm(&mib_req);
+	nb_trans_prev = mib_req.Param.ChannelsNbTrans;
+	mib_req.Param.ChannelsNbTrans = 1;
+	LoRaMacMibSetRequestConfirm(&mib_req);
+
+	/* Store data rate */
+	mib_req.Type = MIB_CHANNELS_DATARATE;
+	LoRaMacMibGetRequestConfirm(&mib_req);
+	datarate_prev = mib_req.Param.ChannelsDatarate;
+
 	int err = lorawan_send(LORAWAN_PORT_CLOCK_SYNC, tx_buf, tx_pos,
 			LORAWAN_MSG_UNCONFIRMED);
 	if (err) {
 		LOG_ERR("Sending clock sync AppTimeReq failed: %d", err);
 	}
+
+	/* Revert ADR setting */
+	mib_req.Type = MIB_ADR;
+	mib_req.Param.AdrEnable = adr_enabled_prev;
+	LoRaMacMibSetRequestConfirm(&mib_req);
+
+	/* Revert NbTrans setting */
+	mib_req.Type = MIB_CHANNELS_NB_TRANS;
+	mib_req.Param.ChannelsNbTrans = nb_trans_prev;
+	LoRaMacMibSetRequestConfirm(&mib_req);
+
+	/* Revert data rate setting */
+	mib_req.Type = MIB_CHANNELS_DATARATE;
+	mib_req.Param.ChannelsDatarate = datarate_prev;
+	LoRaMacMibSetRequestConfirm(&mib_req);
 
 	if (ctx.nb_transmissions > 0) {
 		if (!err) {
