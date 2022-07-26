@@ -89,7 +89,7 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 					    int8_t snr, uint8_t len, const uint8_t *rx_buf)
 {
 	uint8_t rx_pos = 0;
-	bool delayed_answer = false;
+	int ans_delay = 2; /* 2 seconds delay by default */
 
 	if (port != LORAWAN_PORT_FRAG_TRANSPORT) {
 		LOG_ERR("Wrong port %d for frag data package", port);
@@ -107,8 +107,6 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 	while (rx_pos < len) {
 		uint8_t command_id = rx_buf[rx_pos++];
 
-		LOG_DBG("Received frag data cmd 0x%.2x", command_id);
-
 		switch (command_id) {
 		case FRAG_TRANSPORT_CMD_PKG_VERSION:
 			/* ToDo: Don't process in case of multicast session */
@@ -122,17 +120,30 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 			uint8_t participants = frag_status & 0x01;
 			uint8_t index = frag_status >> 1;
 
+			LOG_DBG("FragSessionStatusReq index %d, participants: %u",
+				index, participants);
+
 			ctx[index].decoder_status = FragDecoderGetStatus();
 
 			if (participants == 1 || ctx[index].decoder_status.FragNbLost > 0) {
+
+				uint8_t missing_frag = CLAMP(ctx[index].nb_frag -
+					ctx[index].decoder_status.FragNbRx, 0, 255);
+
 				tx_buf[tx_pos++] = FRAG_TRANSPORT_CMD_FRAG_STATUS;
 				tx_buf[tx_pos++] = ctx[index].decoder_status.FragNbRx & 0xFF;
 				tx_buf[tx_pos++] = (index << 6) |
 					((ctx[index].decoder_status.FragNbRx >> 8) & 0x3F);
-				tx_buf[tx_pos++] = ctx[index].decoder_status.FragNbLost;
+				tx_buf[tx_pos++] = missing_frag;
 				tx_buf[tx_pos++] = ctx[index].decoder_status.MatrixError & 0x01;
 
-				delayed_answer = true;
+				ans_delay = ctx[index].block_ack_delay;
+
+				LOG_DBG("FragSessionStatusAns index %d, FragNbRx: %u, "
+					"FragNbLost: %u, MissingFrag: %u, status: %u, delay: %d",
+					index, ctx[index].decoder_status.FragNbRx,
+					ctx[index].decoder_status.FragNbLost, missing_frag,
+					ctx[index].decoder_status.MatrixError, ans_delay);
 			}
 			break;
 		}
@@ -187,15 +198,18 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 
 			/* ToDo: Handle Wrong Descriptor error */
 
-			if ((status & 0x1F) == 0)	{
-				FragDecoderInit(ctx[index].nb_frag, ctx[index].frag_size,
-						&ctx[index].decoder_callbacks);
-
+			if ((status & 0x1F) == 0) {
 				/*
 				 * Assign callbacks after initialization to prevent the FragDecoder
 				 * from writing byte-wise 0xFF to the entire flash. Instead, erase
 				 * flash properly with own implementation.
 				 */
+				ctx[index].decoder_callbacks.FragDecoderWrite = NULL;
+				ctx[index].decoder_callbacks.FragDecoderRead = NULL;
+
+				FragDecoderInit(ctx[index].nb_frag, ctx[index].frag_size,
+						&ctx[index].decoder_callbacks);
+
 				ctx[index].decoder_callbacks.FragDecoderWrite =
 					fuota_frag_flash_write;
 				ctx[index].decoder_callbacks.FragDecoderRead =
@@ -204,11 +218,11 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 
 				/* ToDo: think about offloading into fuota work queue */
 				fuota_frag_flash_init();
+				ctx[index].decoder_process_status = FRAG_SESSION_ONGOING;
 			}
 
 			tx_buf[tx_pos++] = FRAG_TRANSPORT_CMD_FRAG_SESSION_SETUP;
 			tx_buf[tx_pos++] = status;
-			delayed_answer = false;
 			break;
 		}
 		case FRAG_TRANSPORT_CMD_FRAG_SESSION_DELETE: {
@@ -227,7 +241,6 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 
 			tx_buf[tx_pos++] = FRAG_TRANSPORT_CMD_FRAG_SESSION_DELETE;
 			tx_buf[tx_pos++] = status;
-			delayed_answer = false;
 			break;
 		}
 #if CONFIG_LORAWAN_FRAG_TRANSPORT_VERSION >= 2
@@ -236,7 +249,7 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 			return;
 #endif /* CONFIG_LORAWAN_FRAG_TRANSPORT_VERSION */
 		case FRAG_TRANSPORT_CMD_DATA_FRAGMENT: {
-			uint8_t frag_index_n;
+			uint16_t frag_index_n;
 
 			frag_index_n = rx_buf[rx_pos++];
 			frag_index_n |= rx_buf[rx_pos++] << 8;
@@ -244,8 +257,8 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 			uint16_t frag_counter = frag_index_n & 0x3FFF;
 			uint8_t index = (frag_index_n >> 14) & 0x03;
 
-			LOG_DBG("DataFragment frag_counter: %u, index: %u",
-				frag_counter, index);
+			LOG_DBG("DataFragment %u of %u (session index: %u)",
+				frag_counter, ctx[index].nb_frag, index);
 
 			if (ctx[index].decoder_process_status == FRAG_SESSION_ONGOING) {
 				ctx[index].decoder_process_status =
@@ -253,15 +266,23 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 							   (uint8_t *)&rx_buf[rx_pos]);
 				ctx[index].decoder_status = FragDecoderGetStatus();
 
-				LOG_INF("received frag %d", frag_counter);
-			} else {
-				if (ctx[index].decoder_process_status >= 0) {
-					/* fragmented data transfer finished */
-					ctx[index].decoder_process_status =
-									FRAG_SESSION_NOT_STARTED;
-					fuota_frag_flash_finish();
-				}
+				LOG_DBG("FragDecoder process status: %d",
+					ctx[index].decoder_process_status);
 			}
+
+			if (ctx[index].decoder_process_status >= 0) {
+				/*
+				 * Fragmented data transfer finished successfully
+				 *
+				 * FRAG_SESSION_FINISHED seems to be used for aborted
+				 * sessions, so we set FRAG_SESSION_NOT_STARTED status
+				 */
+				ctx[index].decoder_process_status = FRAG_SESSION_NOT_STARTED;
+
+				/* below command will reboot */
+				fuota_frag_flash_finish();
+			}
+
 			rx_pos += ctx[index].frag_size;
 			break;
 		}
@@ -272,7 +293,7 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 
 	if (tx_pos > 0) {
 		/* ToDo: consider delayed_answer and add random number */
-		k_work_reschedule_for_queue(workq, &tx_work, K_SECONDS(2));
+		k_work_reschedule_for_queue(workq, &tx_work, K_SECONDS(ans_delay));
 	}
 }
 
