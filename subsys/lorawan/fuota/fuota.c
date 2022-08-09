@@ -12,8 +12,10 @@ K_THREAD_STACK_DEFINE(thread_stack_area, CONFIG_LORAWAN_FUOTA_THREAD_STACK_SIZE)
 
 static struct lorawan_fuota_context fuota_ctx;
 
-void lorawan_start_fuota_service(void)
+void lorawan_fuota_run(void (*fuota_finished_cb)(void))
 {
+	fuota_ctx.finished_cb = fuota_finished_cb;
+
 	k_work_queue_init(&fuota_ctx.work_queue);
 
 	k_work_queue_start(&fuota_ctx.work_queue,

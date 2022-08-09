@@ -9,14 +9,22 @@
 #include <LoRaMac.h>
 #include <zephyr/lorawan/lorawan.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/random/rand32.h>
 
 LOG_MODULE_REGISTER(fuota_clock_sync, CONFIG_LORAWAN_FUOTA_LOG_LEVEL);
 
-/* maximum length of clock sync answers */
+/* Maximum length of clock sync answers */
 #define MAX_CLOCK_SYNC_ANS_LEN 6
 
-/* delay between consecutive transmissions of AppTimeReq */
+/* Delay between consecutive transmissions of AppTimeReq */
 #define CLOCK_RESYNC_DELAY 10
+
+/*
+ * Maximum deviation in seconds to consider the clock sufficiently synchronized.
+ *
+ * The standard states "near-second accuracy" and "application-specific threshold".
+ */
+#define CLOCK_SYNC_MAX_DEVIATION 2
 
 enum clock_sync_commands {
 	CLOCK_SYNC_CMD_PKG_VERSION                 = 0x00,
@@ -26,35 +34,37 @@ enum clock_sync_commands {
 };
 
 struct clock_sync_context {
-	/* work item for regular (re-)sync requests (uplink messages) */
+	/** Work item for regular (re-)sync requests (uplink messages) */
 	struct k_work_delayable resync_work;
-
-	/* work item for answers to requests from app server (uplink messages) */
+	/** Work item for answers to requests from app server (uplink messages) */
 	struct k_work tx_work;
+	/** Buffer for one or more uplink clock sync requests or answers */
 	uint8_t tx_buf[3 * MAX_CLOCK_SYNC_ANS_LEN];
+	/** Current position inside buffer tx_buf */
 	uint8_t tx_pos;
-
+	/** Continuously incremented token to map clock sync answers and requests */
 	uint8_t req_token;
+	/** Number of requested clock sync requests left to be transmitted */
 	uint8_t nb_transmissions;
-
 	/**
 	 * Offset to be added to system uptime to get GPS time (as used by LoRaWAN)
 	 */
 	int64_t time_correction;
-
 	/**
 	 * AppTimeReq retransmission interval in seconds
 	 *
 	 * Valid range between 128 (0x80) and 8388608 (0x800000)
 	 */
 	uint32_t periodicity;
+	/** Indication if the clock is considered sufficiently synchronized. */
+	bool synchronized;
 };
 
 static struct lorawan_fuota_context *fuota_ctx;
 
 static struct clock_sync_context ctx;
 
-/*
+/**
  * Writes the DeviceTime into the buffer.
  *
  * @returns number of bytes written or -1 in case of error
@@ -80,7 +90,7 @@ static void clock_sync_tx_handler(struct k_work *work)
 	int err;
 
 	err = lorawan_send(LORAWAN_PORT_CLOCK_SYNC, ctx.tx_buf, ctx.tx_pos,
-			LORAWAN_MSG_UNCONFIRMED);
+			   LORAWAN_MSG_UNCONFIRMED);
 	if (err) {
 		LOG_ERR("Sending clock sync answer failed: %d", err);
 	}
@@ -134,6 +144,12 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 				ctx.time_correction += time_correction;
 				ctx.req_token = (ctx.req_token + 1) % 16;
 
+				if (time_correction >= -CLOCK_SYNC_MAX_DEVIATION &&
+				    time_correction < CLOCK_SYNC_MAX_DEVIATION) {
+					ctx.synchronized = true;
+				} else {
+					ctx.synchronized = false;
+				}
 				LOG_DBG("AppTimeAns time_correction %d (token %d)",
 					time_correction, token);
 			} else {
@@ -142,17 +158,18 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 			break;
 		}
 		case CLOCK_SYNC_CMD_DEVICE_APP_TIME_PERIODICITY: {
-			/* ToDo: Extract periodicity and consider it for clock sync */
-			rx_pos++;
+			uint8_t period = rx_buf[rx_pos++] & 0x0F;
+
+			ctx.periodicity = 1U << (period + 7);
 
 			ctx.tx_buf[ctx.tx_pos++] = CLOCK_SYNC_CMD_DEVICE_APP_TIME_PERIODICITY;
-			ctx.tx_buf[ctx.tx_pos++] = 0x01; /* Status: NotSupported */
+			ctx.tx_buf[ctx.tx_pos++] = 0x00; /* Status: OK */
 
 			ctx.tx_pos +=
 				clock_sync_serialize_device_time(ctx.tx_buf + ctx.tx_pos,
 								 sizeof(ctx.tx_buf) - ctx.tx_pos);
 
-			LOG_DBG("DeviceAppTimePeriodicityReq");
+			LOG_DBG("DeviceAppTimePeriodicityReq period: %u", period);
 			break;
 		}
 		case CLOCK_SYNC_CMD_FORCE_DEVICE_RESYNC: {
@@ -266,19 +283,15 @@ static int clock_sync_app_time_req(void)
 
 static void clock_sync_resync_handler(struct k_work *work)
 {
-	uint32_t periodicity = ctx.periodicity;
-	static int counter;
+	uint32_t periodicity;
 
 	clock_sync_app_time_req();
 
-	if (++counter < 5) {
-		/* reduced periodicity for testing to sync quickly */
-		periodicity = 15;
-	}
+	/* Add +-30s jitter to actual periodicity as required */
+	periodicity = ctx.periodicity - 30 + sys_rand32_get() % 61;
 
-	/* ToDo: Add random value to periodicity (see spec) */
 	k_work_reschedule_for_queue(&fuota_ctx->work_queue, &ctx.resync_work,
-		K_SECONDS(periodicity));
+				    K_SECONDS(periodicity));
 }
 
 static struct lorawan_downlink_cb downlink_cb = {
@@ -289,7 +302,7 @@ static struct lorawan_downlink_cb downlink_cb = {
 void fuota_clock_sync_start(struct lorawan_fuota_context *fctx)
 {
 	fuota_ctx = fctx;
-	ctx.periodicity = 128; /* lowest valid value for testing */
+	ctx.periodicity = CONFIG_LORAWAN_APP_CLOCK_SYNC_PERIODICITY;
 
 	k_work_init(&ctx.tx_work, clock_sync_tx_handler);
 
@@ -299,7 +312,12 @@ void fuota_clock_sync_start(struct lorawan_fuota_context *fctx)
 	k_work_reschedule_for_queue(&fuota_ctx->work_queue, &ctx.resync_work, K_NO_WAIT);
 }
 
-uint32_t fuota_clock_sync_get_time(void)
+int lorawan_fuota_get_clock(uint32_t *gps_time)
 {
-	return (uint32_t)(k_uptime_get() / 1000 + ctx.time_correction);
+	if (ctx.synchronized) {
+		*gps_time = (uint32_t)(k_uptime_get() / 1000 + ctx.time_correction);
+		return 0;
+	} else {
+		return -EAGAIN;
+	}
 }

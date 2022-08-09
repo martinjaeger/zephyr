@@ -297,8 +297,21 @@ void lorawan_get_payload_sizes(uint8_t *max_next_payload_size,
  *
  * This function starts the clock synchronisation process and afterwards waits
  * for incoming FUOTA requests in a dedicated thread in the background.
+ *
+ * @param fuota_finished_cb Callback for notification of finished firmware transfer.
  */
-void lorawan_start_fuota_service(void);
+void lorawan_fuota_run(void (*fuota_finished_cb)(void));
+
+/**
+ * @brief Retrieve the current synchronized time
+ *
+ * This function uses the GPS epoch format, as used in all LoRaWAN services.
+ *
+ * @param gps_time Synchronized time in GPS epoch format truncated to 32-bit.
+ *
+ * @return 0 if successful, -EAGAIN if the clock is not yet synchronized.
+ */
+int lorawan_fuota_get_clock(uint32_t *gps_time);
 
 #endif
 

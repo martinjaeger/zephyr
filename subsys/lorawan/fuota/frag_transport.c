@@ -10,6 +10,7 @@
 #include <FragDecoder.h>
 #include <zephyr/lorawan/lorawan.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/random/rand32.h>
 
 LOG_MODULE_REGISTER(fuota_frag_transport, CONFIG_LORAWAN_FUOTA_LOG_LEVEL);
 
@@ -46,7 +47,7 @@ struct frag_transport_context {
 	union {
 		uint8_t control;
 		struct {
-			/** Random delay to be added for some responses */
+			/** Random delay for some responses between 0 and 2^(BlockAckDelay + 4) */
 			uint8_t block_ack_delay: 3;
 			/** Used fragmentation algorithm (0 for forward error correction) */
 			uint8_t frag_algo: 3;
@@ -67,7 +68,7 @@ struct frag_transport_context {
 	int32_t decoder_process_status;
 };
 
-static struct k_work_q *workq;
+static struct lorawan_fuota_context *fuota_ctx;
 
 static struct k_work_delayable tx_work;
 static uint8_t tx_buf[3 * MAX_FRAG_TRANSPORT_ANS_LEN];
@@ -89,7 +90,7 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 					    int8_t snr, uint8_t len, const uint8_t *rx_buf)
 {
 	uint8_t rx_pos = 0;
-	int ans_delay = 2; /* 2 seconds delay by default */
+	int ans_delay = 0;
 
 	if (port != LORAWAN_PORT_FRAG_TRANSPORT) {
 		LOG_ERR("Wrong port %d for frag data package", port);
@@ -137,7 +138,8 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 				tx_buf[tx_pos++] = missing_frag;
 				tx_buf[tx_pos++] = ctx[index].decoder_status.MatrixError & 0x01;
 
-				ans_delay = ctx[index].block_ack_delay;
+				ans_delay = sys_rand32_get() %
+					(1U << (ctx[index].block_ack_delay + 4));
 
 				LOG_DBG("FragSessionStatusAns index %d, FragNbRx: %u, "
 					"FragNbLost: %u, MissingFrag: %u, status: %u, delay: %d",
@@ -196,7 +198,7 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 				status |= 1U << 2;
 			}
 
-			/* ToDo: Handle Wrong Descriptor error */
+			/* Descriptor not used: Ignore Wrong Descriptor error */
 
 			if ((status & 0x1F) == 0) {
 				/*
@@ -216,7 +218,6 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 					fuota_frag_flash_read;
 				ctx[index].is_active = true;
 
-				/* ToDo: think about offloading into fuota work queue */
 				fuota_frag_flash_init();
 				ctx[index].decoder_process_status = FRAG_SESSION_ONGOING;
 			}
@@ -279,8 +280,11 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 				 */
 				ctx[index].decoder_process_status = FRAG_SESSION_NOT_STARTED;
 
-				/* below command will reboot */
 				fuota_frag_flash_finish();
+
+				if (fuota_ctx->finished_cb != NULL) {
+					fuota_ctx->finished_cb();
+				}
 			}
 
 			rx_pos += ctx[index].frag_size;
@@ -292,8 +296,7 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 	}
 
 	if (tx_pos > 0) {
-		/* ToDo: consider delayed_answer and add random number */
-		k_work_reschedule_for_queue(workq, &tx_work, K_SECONDS(ans_delay));
+		k_work_reschedule_for_queue(&fuota_ctx->work_queue, &tx_work, K_SECONDS(ans_delay));
 	}
 }
 
@@ -302,9 +305,9 @@ static struct lorawan_downlink_cb downlink_cb = {
 	.cb = frag_transport_package_callback
 };
 
-int fuota_frag_transport_init(struct lorawan_fuota_context *fuota_ctx)
+int fuota_frag_transport_init(struct lorawan_fuota_context *fctx)
 {
-	workq = &fuota_ctx->work_queue;
+	fuota_ctx = fctx;
 
 	k_work_init_delayable(&tx_work, frag_transport_tx_handler);
 

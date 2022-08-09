@@ -10,6 +10,7 @@
 #include <LoRaMac.h>
 #include <zephyr/lorawan/lorawan.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/random/rand32.h>
 
 LOG_MODULE_REGISTER(fuota_multicast, CONFIG_LORAWAN_FUOTA_LOG_LEVEL);
 
@@ -26,15 +27,19 @@ enum multicast_commands {
 };
 
 struct multicast_context {
-	uint8_t group_id;
+	/* McAddr: multicast group network address */
 	uint32_t mc_addr;
+	/* McKey_encrypted: encrypted multicast group key used to derive McAppSKey and McNetSKey */
 	uint8_t mc_key_encrypted[16];
+	/* minMcFCount: next frame counter value of the multicast downlink to be sent */
 	uint32_t mc_fcnt_min;
+	/* maxMcFCount: lifetime of this multicast group expressed as a maximum number of frames */
 	uint32_t mc_fcnt_max;
-	/** start of the Class C window as GPS epoch modulo 32 */
+	/** Start of the Class C window as GPS epoch modulo 2^32 */
 	uint32_t session_time;
-	/** maximum duration of MC session before device reverts to class A */
+	/** Maximum duration of MC session before device reverts to class A */
 	uint32_t session_timeout;
+	/** Receive parameters for MC session */
 	McRxParams_t rx_params;
 
 	struct k_work_delayable session_start_work;
@@ -57,7 +62,9 @@ static void multicast_session_start(struct k_work *work)
 
 	err = lorawan_set_class(LORAWAN_CLASS_C);
 	if (err) {
-		LOG_ERR("Failed to switch to class C: %d", err);
+		LOG_WRN("Failed to switch to class C, retrying...");
+		k_work_reschedule_for_queue(&fuota_ctx->work_queue,
+					    k_work_delayable_from_work(work), K_NO_WAIT);
 	} else {
 		LOG_DBG("Switched to class C");
 	}
@@ -148,8 +155,8 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 			ctx[id].mc_fcnt_max += (rx_buf[rx_pos++] << 16);
 			ctx[id].mc_fcnt_max += (rx_buf[rx_pos++] << 24);
 
-			LOG_DBG("McGroupSetupReq id: %d, addr: 0x%.8X, "
-				"fcnt_min: %u, fcnt_max: %d", id, ctx[id].mc_addr,
+			LOG_DBG("McGroupSetupReq id: %u, addr: 0x%.8X, "
+				"fcnt_min: %u, fcnt_max: %u", id, ctx[id].mc_addr,
 				ctx[id].mc_fcnt_min, ctx[id].mc_fcnt_max);
 
 			McChannelParams_t channel = {
@@ -227,8 +234,14 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 
 			tx_buf[tx_pos++] = MULTICAST_CMD_MC_GROUP_CLASS_C_SESSION;
 			if (ret == LORAMAC_STATUS_OK) {
-				int32_t time_to_start =
-					ctx[id].session_time - fuota_clock_sync_get_time();
+				uint32_t current_time;
+				int32_t time_to_start;
+
+				if (lorawan_fuota_get_clock(&current_time) != 0) {
+					LOG_WRN("Clock may not be synchronized");
+				}
+
+				time_to_start =	ctx[id].session_time - current_time;
 
 				if (time_to_start > 0xFFFFFF) {
 					/* truncated value indicates that clocks are out of sync */
@@ -254,8 +267,10 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 				} else {
 					LOG_ERR("Missed class C session start at %d in %d s",
 						ctx[id].session_time, time_to_start);
+#if CONFIG_LORAWAN_REMOTE_MULTICAST_VERSION >= 2
 					/* set StartMissed flag */
 					tx_buf[tx_pos++] = (1U << 5) | status;
+#endif
 				}
 			} else {
 				LOG_ERR("McClassCSessionReq failed: %s",
@@ -263,8 +278,9 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 				if (ret == LORAMAC_STATUS_MC_GROUP_UNDEFINED) {
 					/* set McGroupUndefined flag */
 					tx_buf[tx_pos++] = (1U << 4) | status;
-				} else {
-					/* ToDo: consider FreqError and DR Errors */
+				} else if (ret == LORAMAC_STATUS_FREQ_AND_DR_INVALID) {
+					/* set FreqError and DR Error flags */
+					tx_buf[tx_pos++] = (3U << 2) | status;
 					return;
 				}
 			}
@@ -279,8 +295,10 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 	}
 
 	if (tx_pos > 0) {
-		/* ToDo: Random delay 2+-1 seconds according to RP002-1.0.3, chapter 2.3 */
-		k_work_reschedule_for_queue(&fuota_ctx->work_queue, &tx_work, K_SECONDS(2));
+		/* Random delay 2+-1 seconds according to RP002-1.0.3, chapter 2.3 */
+		uint32_t delay = 1 + sys_rand32_get() % 3;
+
+		k_work_reschedule_for_queue(&fuota_ctx->work_queue, &tx_work, K_SECONDS(delay));
 	}
 }
 
