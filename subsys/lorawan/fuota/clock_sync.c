@@ -36,12 +36,6 @@ enum clock_sync_commands {
 struct clock_sync_context {
 	/** Work item for regular (re-)sync requests (uplink messages) */
 	struct k_work_delayable resync_work;
-	/** Work item for answers to requests from app server (uplink messages) */
-	struct k_work tx_work;
-	/** Buffer for one or more uplink clock sync requests or answers */
-	uint8_t tx_buf[3 * MAX_CLOCK_SYNC_ANS_LEN];
-	/** Current position inside buffer tx_buf */
-	uint8_t tx_pos;
 	/** Continuously incremented token to map clock sync answers and requests */
 	uint8_t req_token;
 	/** Number of requested clock sync requests left to be transmitted */
@@ -85,20 +79,11 @@ static int clock_sync_serialize_device_time(uint8_t *buf, size_t size)
 	return 4;
 }
 
-static void clock_sync_tx_handler(struct k_work *work)
-{
-	int err;
-
-	err = lorawan_send(LORAWAN_PORT_CLOCK_SYNC, ctx.tx_buf, ctx.tx_pos,
-			   LORAWAN_MSG_UNCONFIRMED);
-	if (err) {
-		LOG_ERR("Sending clock sync answer failed: %d", err);
-	}
-}
-
 static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t rssi, int8_t snr,
 					uint8_t len, const uint8_t *rx_buf)
 {
+	uint8_t tx_buf[3 * MAX_CLOCK_SYNC_ANS_LEN];
+	uint8_t tx_pos = 0;
 	uint8_t rx_pos = 0;
 
 	if (port != LORAWAN_PORT_CLOCK_SYNC) {
@@ -106,27 +91,19 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 		return;
 	}
 
-	if (k_work_is_pending(&ctx.tx_work)) {
-		/* we are not allowed to use the tx buffer */
-		LOG_ERR("tx_work pending, cannot process package");
-		return;
-	}
-
-	ctx.tx_pos = 0;
-
 	while (rx_pos < len) {
 		uint8_t command_id = rx_buf[rx_pos++];
 
-		if (sizeof(ctx.tx_buf) - ctx.tx_pos < MAX_CLOCK_SYNC_ANS_LEN) {
+		if (sizeof(tx_buf) - tx_pos < MAX_CLOCK_SYNC_ANS_LEN) {
 			LOG_ERR("insufficient tx_buf size, some requests discarded");
 			break;
 		}
 
 		switch (command_id) {
 		case CLOCK_SYNC_CMD_PKG_VERSION:
-			ctx.tx_buf[ctx.tx_pos++] = CLOCK_SYNC_CMD_PKG_VERSION;
-			ctx.tx_buf[ctx.tx_pos++] = LORAWAN_PACKAGE_ID_CLOCK_SYNC;
-			ctx.tx_buf[ctx.tx_pos++] = CONFIG_LORAWAN_APP_CLOCK_SYNC_VERSION;
+			tx_buf[tx_pos++] = CLOCK_SYNC_CMD_PKG_VERSION;
+			tx_buf[tx_pos++] = LORAWAN_PACKAGE_ID_CLOCK_SYNC;
+			tx_buf[tx_pos++] = CONFIG_LORAWAN_APP_CLOCK_SYNC_VERSION;
 			LOG_DBG("PackageVersionReq");
 			break;
 		case CLOCK_SYNC_CMD_APP_TIME: {
@@ -162,12 +139,11 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 
 			ctx.periodicity = 1U << (period + 7);
 
-			ctx.tx_buf[ctx.tx_pos++] = CLOCK_SYNC_CMD_DEVICE_APP_TIME_PERIODICITY;
-			ctx.tx_buf[ctx.tx_pos++] = 0x00; /* Status: OK */
+			tx_buf[tx_pos++] = CLOCK_SYNC_CMD_DEVICE_APP_TIME_PERIODICITY;
+			tx_buf[tx_pos++] = 0x00; /* Status: OK */
 
-			ctx.tx_pos +=
-				clock_sync_serialize_device_time(ctx.tx_buf + ctx.tx_pos,
-								 sizeof(ctx.tx_buf) - ctx.tx_pos);
+			tx_pos += clock_sync_serialize_device_time(tx_buf + tx_pos,
+								   sizeof(tx_buf) - tx_pos);
 
 			LOG_DBG("DeviceAppTimePeriodicityReq period: %u", period);
 			break;
@@ -189,8 +165,9 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 		}
 	}
 
-	if (ctx.tx_pos > 0) {
-		k_work_submit_to_queue(&fuota_ctx->work_queue, &ctx.tx_work);
+	if (tx_pos > 0) {
+		fuota_schedule_uplink(LORAWAN_PORT_CLOCK_SYNC, tx_buf, tx_pos,
+				      LORAWAN_MSG_UNCONFIRMED, K_NO_WAIT);
 	}
 }
 
@@ -247,11 +224,8 @@ static int clock_sync_app_time_req(void)
 	datarate_prev = mib_req.Param.ChannelsDatarate;
 #endif /* CONFIG_LORAWAN_APP_CLOCK_SYNC_VERSION == 1 */
 
-	int err = lorawan_send(LORAWAN_PORT_CLOCK_SYNC, tx_buf, tx_pos,
-			LORAWAN_MSG_UNCONFIRMED);
-	if (err) {
-		LOG_ERR("Sending clock sync AppTimeReq failed: %d", err);
-	}
+	fuota_schedule_uplink(LORAWAN_PORT_CLOCK_SYNC, tx_buf, tx_pos, LORAWAN_MSG_UNCONFIRMED,
+			      K_SECONDS(CLOCK_RESYNC_DELAY));
 
 #if CONFIG_LORAWAN_APP_CLOCK_SYNC_VERSION == 1
 	/* Revert ADR setting */
@@ -271,14 +245,12 @@ static int clock_sync_app_time_req(void)
 #endif /* CONFIG_LORAWAN_APP_CLOCK_SYNC_VERSION == 1 */
 
 	if (ctx.nb_transmissions > 0) {
-		if (!err) {
-			ctx.nb_transmissions--;
-		}
+		ctx.nb_transmissions--;
 		k_work_reschedule_for_queue(&fuota_ctx->work_queue, &ctx.resync_work,
-			K_SECONDS(CLOCK_RESYNC_DELAY));
+					    K_SECONDS(CLOCK_RESYNC_DELAY));
 	}
 
-	return err;
+	return 0;
 }
 
 static void clock_sync_resync_handler(struct k_work *work)
@@ -303,8 +275,6 @@ void fuota_clock_sync_start(struct lorawan_fuota_context *fctx)
 {
 	fuota_ctx = fctx;
 	ctx.periodicity = CONFIG_LORAWAN_APP_CLOCK_SYNC_PERIODICITY;
-
-	k_work_init(&ctx.tx_work, clock_sync_tx_handler);
 
 	lorawan_register_downlink_callback(&downlink_cb);
 

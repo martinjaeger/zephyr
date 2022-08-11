@@ -48,10 +48,6 @@ struct multicast_context {
 
 static struct lorawan_fuota_context *fuota_ctx;
 
-static struct k_work_delayable tx_work;
-static uint8_t tx_buf[3 * MAX_MULTICAST_ANS_LEN];
-static uint8_t tx_pos;
-
 static struct multicast_context ctx[LORAMAC_MAX_MC_CTX];
 
 static void multicast_session_start(struct k_work *work)
@@ -92,33 +88,17 @@ static void multicast_session_stop(struct k_work *work)
 	k_mutex_unlock(&fuota_ctx->mutex);
 }
 
-static void multicast_tx_handler(struct k_work *work)
-{
-	int err;
-
-	err = lorawan_send(LORAWAN_PORT_MULTICAST, tx_buf, tx_pos, LORAWAN_MSG_UNCONFIRMED);
-	if (err) {
-		LOG_ERR("Sending multicast answer failed: %d", err);
-	}
-}
-
 static void multicast_package_callback(uint8_t port, bool data_pending, int16_t rssi, int8_t snr,
 				       uint8_t len, const uint8_t *rx_buf)
 {
+	uint8_t tx_buf[3 * MAX_MULTICAST_ANS_LEN];
+	uint8_t tx_pos = 0;
 	uint8_t rx_pos = 0;
 
 	if (port != LORAWAN_PORT_MULTICAST) {
 		LOG_ERR("Wrong port %d for remote multicast package", port);
 		return;
 	}
-
-	if (k_work_delayable_is_pending(&tx_work)) {
-		/* we are not allowed to use the tx buffer */
-		LOG_ERR("tx_work pending, cannot process package");
-		return;
-	}
-
-	tx_pos = 0;
 
 	while (rx_pos < len) {
 		uint8_t command_id = rx_buf[rx_pos++];
@@ -298,7 +278,8 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 		/* Random delay 2+-1 seconds according to RP002-1.0.3, chapter 2.3 */
 		uint32_t delay = 1 + sys_rand32_get() % 3;
 
-		k_work_reschedule_for_queue(&fuota_ctx->work_queue, &tx_work, K_SECONDS(delay));
+		fuota_schedule_uplink(LORAWAN_PORT_MULTICAST, tx_buf, tx_pos,
+				      LORAWAN_MSG_UNCONFIRMED, K_SECONDS(delay));
 	}
 }
 
@@ -310,8 +291,6 @@ static struct lorawan_downlink_cb downlink_cb = {
 int fuota_multicast_init(struct lorawan_fuota_context *fctx)
 {
 	fuota_ctx = fctx;
-
-	k_work_init_delayable(&tx_work, multicast_tx_handler);
 
 	for (int i = 0; i < ARRAY_SIZE(ctx); i++) {
 		k_work_init_delayable(&ctx[i].session_start_work, multicast_session_start);

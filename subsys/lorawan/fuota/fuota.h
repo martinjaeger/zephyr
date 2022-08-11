@@ -8,6 +8,7 @@
 #define ZEPHYR_SUBSYS_LORAWAN_FUOTA_FUOTA_H_
 
 #include <zephyr/zephyr.h>
+#include <zephyr/lorawan/lorawan.h>
 
 /**
  * Unique package identifiers used for FUOTA services.
@@ -45,6 +46,12 @@ struct lorawan_fuota_context {
 	/* Callback for notification of finished firmware transfer */
 	void (*finished_cb)(void);
 };
+
+/**
+ * Send LoRaWAN uplink message after the specified timeout
+ */
+int fuota_schedule_uplink(uint8_t port, uint8_t *data, uint8_t len,
+			  enum lorawan_message_type type, k_timeout_t timeout);
 
 /**
  * Start clock synchronization work
