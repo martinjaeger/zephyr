@@ -249,17 +249,7 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 
 				LOG_DBG("FragDecoder process status: %d",
 					ctx[index].decoder_process_status);
-			}
-
-			if (ctx[index].decoder_process_status >= 0) {
-				/*
-				 * Fragmented data transfer finished successfully
-				 *
-				 * FRAG_SESSION_FINISHED seems to be used for aborted
-				 * sessions, so we set FRAG_SESSION_NOT_STARTED status
-				 */
-				ctx[index].decoder_process_status = FRAG_SESSION_NOT_STARTED;
-
+			} else if (ctx[index].decoder_process_status == FRAG_SESSION_FINISHED) {
 				fuota_frag_flash_finish();
 
 				if (fuota_ctx->finished_cb != NULL) {
@@ -289,6 +279,11 @@ static struct lorawan_downlink_cb downlink_cb = {
 int fuota_frag_transport_init(struct lorawan_fuota_context *fctx)
 {
 	fuota_ctx = fctx;
+
+	/* initialize non-zero static variables */
+	for (int i = 0; i < ARRAY_SIZE(ctx); i++) {
+		ctx[i].decoder_process_status = FRAG_SESSION_NOT_STARTED;
+	}
 
 	lorawan_register_downlink_callback(&downlink_cb);
 
