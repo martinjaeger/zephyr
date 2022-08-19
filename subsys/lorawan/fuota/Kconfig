@@ -83,19 +83,6 @@ config LORAWAN_FUOTA_FRAG_REDUNDANCY
 
 	  This setting has significant influence on RAM usage.
 
-config LORAWAN_APP_CLOCK_SYNC_VERSION
-	int "Application Layer Clock Synchronization specification"
-	range 1 2
-	default 1
-	help
-	  The implementation considers different versions of the specification
-	  released by the LoRa Alliance.
-
-	  Select one of the following revisions:
-
-	  1: TS003-1.0.0
-	  2: TS003-2.0.0 (not fully supported, only for testing)
-
 config LORAWAN_APP_CLOCK_SYNC_PERIODICITY
 	int "Application Layer Clock Synchronization periodicity"
 	range 128 4194304

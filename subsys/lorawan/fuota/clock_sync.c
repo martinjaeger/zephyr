@@ -13,6 +13,15 @@
 
 LOG_MODULE_REGISTER(fuota_clock_sync, CONFIG_LORAWAN_FUOTA_LOG_LEVEL);
 
+/**
+ * Version of LoRaWAN Application Layer Clock Synchronization Specification
+ *
+ * This implementation only supports TS003-2.0.0, as the previous revision TS003-1.0.0
+ * requested to temporarily disable ADR and and set nb_trans to 1. This causes issues on the
+ * server side and is not recommended anymore.
+ */
+#define CLOCK_SYNC_PACKAGE_VERSION 2
+
 /* Maximum length of clock sync answers */
 #define MAX_CLOCK_SYNC_ANS_LEN 6
 
@@ -100,7 +109,7 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 		case CLOCK_SYNC_CMD_PKG_VERSION:
 			tx_buf[tx_pos++] = CLOCK_SYNC_CMD_PKG_VERSION;
 			tx_buf[tx_pos++] = LORAWAN_PACKAGE_ID_CLOCK_SYNC;
-			tx_buf[tx_pos++] = CONFIG_LORAWAN_APP_CLOCK_SYNC_VERSION;
+			tx_buf[tx_pos++] = CLOCK_SYNC_PACKAGE_VERSION;
 			LOG_DBG("PackageVersionReq");
 			break;
 		case CLOCK_SYNC_CMD_APP_TIME: {
@@ -173,18 +182,6 @@ static int clock_sync_app_time_req(void)
 	uint8_t tx_pos = 0;
 	uint8_t tx_buf[6];
 
-#if CONFIG_LORAWAN_APP_CLOCK_SYNC_VERSION == 1
-	MibRequestConfirm_t mib_req;
-	bool adr_enabled_prev;
-	uint8_t nb_trans_prev;
-	uint8_t datarate_prev;
-#endif
-
-	if (LoRaMacIsBusy()) {
-		LOG_ERR("LoRaMAC is busy");
-		return -EBUSY;
-	}
-
 	if (fuota_ctx->active_class_c_sessions > 0) {
 		/* avoid disturbing the session and causing potential package loss */
 		LOG_DBG("AppTimeReq not sent because of active class C session");
@@ -200,46 +197,8 @@ static int clock_sync_app_time_req(void)
 
 	LOG_DBG("Sending clock sync AppTimeReq (token %d)", ctx.req_token);
 
-#if CONFIG_LORAWAN_APP_CLOCK_SYNC_VERSION == 1
-	/* Disable ADR */
-	mib_req.Type = MIB_ADR;
-	LoRaMacMibGetRequestConfirm(&mib_req);
-	adr_enabled_prev = mib_req.Param.AdrEnable;
-	mib_req.Param.AdrEnable = false;
-	LoRaMacMibSetRequestConfirm(&mib_req);
-
-	/* Set NbTrans = 1 */
-	mib_req.Type = MIB_CHANNELS_NB_TRANS;
-	LoRaMacMibGetRequestConfirm(&mib_req);
-	nb_trans_prev = mib_req.Param.ChannelsNbTrans;
-	mib_req.Param.ChannelsNbTrans = 1;
-	LoRaMacMibSetRequestConfirm(&mib_req);
-
-	/* Store data rate */
-	mib_req.Type = MIB_CHANNELS_DATARATE;
-	LoRaMacMibGetRequestConfirm(&mib_req);
-	datarate_prev = mib_req.Param.ChannelsDatarate;
-#endif /* CONFIG_LORAWAN_APP_CLOCK_SYNC_VERSION == 1 */
-
 	fuota_schedule_uplink(LORAWAN_PORT_CLOCK_SYNC, tx_buf, tx_pos, LORAWAN_MSG_UNCONFIRMED,
-			      K_SECONDS(CLOCK_RESYNC_DELAY));
-
-#if CONFIG_LORAWAN_APP_CLOCK_SYNC_VERSION == 1
-	/* Revert ADR setting */
-	mib_req.Type = MIB_ADR;
-	mib_req.Param.AdrEnable = adr_enabled_prev;
-	LoRaMacMibSetRequestConfirm(&mib_req);
-
-	/* Revert NbTrans setting */
-	mib_req.Type = MIB_CHANNELS_NB_TRANS;
-	mib_req.Param.ChannelsNbTrans = nb_trans_prev;
-	LoRaMacMibSetRequestConfirm(&mib_req);
-
-	/* Revert data rate setting */
-	mib_req.Type = MIB_CHANNELS_DATARATE;
-	mib_req.Param.ChannelsDatarate = datarate_prev;
-	LoRaMacMibSetRequestConfirm(&mib_req);
-#endif /* CONFIG_LORAWAN_APP_CLOCK_SYNC_VERSION == 1 */
+			      K_NO_WAIT);
 
 	if (ctx.nb_transmissions > 0) {
 		ctx.nb_transmissions--;
