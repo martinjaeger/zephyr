@@ -86,10 +86,7 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 	uint8_t tx_pos = 0;
 	uint8_t rx_pos = 0;
 
-	if (port != LORAWAN_PORT_CLOCK_SYNC) {
-		LOG_ERR("Wrong port %d for clock sync package", port);
-		return;
-	}
+	__ASSERT(port == LORAWAN_PORT_CLOCK_SYNC, "Wrong port %d", port);
 
 	while (rx_pos < len) {
 		uint8_t command_id = rx_buf[rx_pos++];

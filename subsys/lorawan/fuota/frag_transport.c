@@ -80,10 +80,7 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 	uint8_t rx_pos = 0;
 	int ans_delay = 0;
 
-	if (port != LORAWAN_PORT_FRAG_TRANSPORT) {
-		LOG_ERR("Wrong port %d for frag data package", port);
-		return;
-	}
+	__ASSERT(port == LORAWAN_PORT_FRAG_TRANSPORT, "Wrong port %d", port);
 
 	while (rx_pos < len) {
 		uint8_t command_id = rx_buf[rx_pos++];
