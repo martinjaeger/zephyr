@@ -1,6 +1,10 @@
 /*
  * Copyright (c) 2022 Martin Jäger <martin@libre.solar>
  *
+ * Parts of this implementation were inspired by LmhpClockSync.c from the
+ * LoRaMac-node firmware repository https://github.com/Lora-net/LoRaMac-node
+ * written by Miguel Luis (Semtech).
+ *
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -114,9 +118,11 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 			break;
 		case CLOCK_SYNC_CMD_APP_TIME: {
 			/* answer from application server */
-			ctx.nb_transmissions = 0;
-			int32_t time_correction = rx_buf[rx_pos++];
+			int32_t time_correction;
 
+			ctx.nb_transmissions = 0;
+
+			time_correction = rx_buf[rx_pos++];
 			time_correction	+= rx_buf[rx_pos++] << 8;
 			time_correction	+= rx_buf[rx_pos++] << 16;
 			time_correction	+= rx_buf[rx_pos++] << 24;

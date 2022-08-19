@@ -1,6 +1,10 @@
 /*
  * Copyright (c) 2022 Martin Jäger <martin@libre.solar>
  *
+ * Parts of this implementation were inspired by LmhpFragmentation.c from the
+ * LoRaMac-node firmware repository https://github.com/Lora-net/LoRaMac-node
+ * written by Miguel Luis (Semtech).
+ *
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -215,7 +219,7 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 			uint8_t status = 0x00;
 
 			status |= index;
-			if (index >= ARRAY_SIZE(ctx) || ctx[index].is_active == false) {
+			if (index >= ARRAY_SIZE(ctx) || !ctx[index].is_active) {
 				/* Session does not exist */
 				status |= 1U << 3;
 			} else {

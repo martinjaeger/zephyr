@@ -1,6 +1,10 @@
 /*
  * Copyright (c) 2022 Martin Jäger <martin@libre.solar>
  *
+ * Parts of this implementation were inspired by LmhpRemoteMcastSetup.c from the
+ * LoRaMac-node firmware repository https://github.com/Lora-net/LoRaMac-node
+ * written by Miguel Luis (Semtech).
+ *
  * SPDX-License-Identifier: Apache-2.0
  */
 
