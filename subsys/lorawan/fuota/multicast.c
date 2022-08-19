@@ -58,14 +58,14 @@ static void multicast_session_start(struct k_work *work)
 
 	err = lorawan_set_class(LORAWAN_CLASS_C);
 	if (err) {
-		LOG_WRN("Failed to switch to class C, retrying...");
+		LOG_WRN("Failed to switch to class C: %d. Retrying in 1s.", err);
 		k_work_reschedule_for_queue(&fuota_ctx->work_queue,
-					    k_work_delayable_from_work(work), K_NO_WAIT);
+					    k_work_delayable_from_work(work), K_SECONDS(1));
 	} else {
 		LOG_DBG("Switched to class C");
+		fuota_ctx->active_class_c_sessions++;
 	}
 
-	fuota_ctx->active_class_c_sessions++;
 	k_mutex_unlock(&fuota_ctx->mutex);
 }
 
@@ -75,13 +75,17 @@ static void multicast_session_stop(struct k_work *work)
 
 	k_mutex_lock(&fuota_ctx->mutex, K_FOREVER);
 
-	fuota_ctx->active_class_c_sessions--;
-	if (fuota_ctx->active_class_c_sessions == 0) {
+	if (fuota_ctx->active_class_c_sessions > 1) {
+		fuota_ctx->active_class_c_sessions--;
+	} else if (fuota_ctx->active_class_c_sessions == 1) {
 		err = lorawan_set_class(LORAWAN_CLASS_A);
 		if (err) {
-			LOG_ERR("Failed to revert to class A: %d", err);
+			LOG_WRN("Failed to revert to class A: %d. Retrying in 1s.", err);
+			k_work_reschedule_for_queue(&fuota_ctx->work_queue,
+						k_work_delayable_from_work(work), K_SECONDS(1));
 		} else {
 			LOG_DBG("Reverted to class A");
+			fuota_ctx->active_class_c_sessions--;
 		}
 	}
 
