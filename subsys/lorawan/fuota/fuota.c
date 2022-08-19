@@ -14,7 +14,8 @@ LOG_MODULE_REGISTER(fuota, CONFIG_LORAWAN_FUOTA_LOG_LEVEL);
 struct fuota_uplink_msg {
 	bool used;
 	uint8_t port;
-	uint8_t data[10];
+	/* sufficient space for up to 3 answers (max 6 bytes each) */
+	uint8_t data[18];
 	uint8_t len;
 	enum lorawan_message_type type;
 	/* absolute ticks when this message should be scheduled */
@@ -112,7 +113,8 @@ int fuota_schedule_uplink(uint8_t port, uint8_t *data, uint8_t len,
 	int64_t timeout_abs_ticks;
 
 	if (len > sizeof(messages[0].data)) {
-		LOG_ERR("Uplink payload too long.");
+		LOG_ERR("Uplink payload for port %u too long: %u bytes", port, len);
+		LOG_HEXDUMP_ERR(data, len, "Payload: ");
 		return -EFBIG;
 	}
 
