@@ -284,8 +284,10 @@ void fuota_clock_sync_start(struct lorawan_fuota_context *fctx)
 
 int lorawan_fuota_get_clock(uint32_t *gps_time)
 {
+	__ASSERT(gps_time != NULL, "gps_time parameter is required");
+
+	*gps_time = (uint32_t)(k_uptime_get() / 1000 + ctx.time_correction);
 	if (ctx.synchronized) {
-		*gps_time = (uint32_t)(k_uptime_get() / 1000 + ctx.time_correction);
 		return 0;
 	} else {
 		return -EAGAIN;
