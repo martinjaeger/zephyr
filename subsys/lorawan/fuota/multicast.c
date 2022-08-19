@@ -107,6 +107,11 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 	while (rx_pos < len) {
 		uint8_t command_id = rx_buf[rx_pos++];
 
+		if (sizeof(tx_buf) - tx_pos < MAX_MULTICAST_ANS_LEN) {
+			LOG_ERR("insufficient tx_buf size, some requests discarded");
+			break;
+		}
+
 		switch (command_id) {
 		case MULTICAST_CMD_PKG_VERSION:
 			tx_buf[tx_pos++] = MULTICAST_CMD_PKG_VERSION;

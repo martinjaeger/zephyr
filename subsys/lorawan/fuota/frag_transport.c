@@ -88,6 +88,11 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 	while (rx_pos < len) {
 		uint8_t command_id = rx_buf[rx_pos++];
 
+		if (sizeof(tx_buf) - tx_pos < MAX_FRAG_TRANSPORT_ANS_LEN) {
+			LOG_ERR("insufficient tx_buf size, some requests discarded");
+			break;
+		}
+
 		switch (command_id) {
 		case FRAG_TRANSPORT_CMD_PKG_VERSION:
 			/* ToDo: Don't process in case of multicast session */
