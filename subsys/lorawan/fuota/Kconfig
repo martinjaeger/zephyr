@@ -51,13 +51,14 @@ config LORAWAN_FUOTA_IMAGE_SIZE
 
 	  This setting has significant influence on RAM usage.
 
-config LORAWAN_FUOTA_FRAG_SIZE
-	int "Size of fragments for transport"
+config LORAWAN_FUOTA_MAX_FRAG_SIZE
+	int "Maximum size of transported fragments"
 	range 1 239
 	default 200
 	help
-	  Size of one fragment transferred during the fragmented data block
-	  transport session of the FUOTA process.
+	  Maximum size of one fragment transferred during the fragmented data
+	  block transport session of the FUOTA process. It is chosen on the
+	  server side.
 
 	  The fragment has to fit into the LoRaWAN payload, which can be up to
 	  242 bytes depending on the region and frequency settings. 3 bytes of
@@ -66,7 +67,29 @@ config LORAWAN_FUOTA_FRAG_SIZE
 	  For some MCUs like the STM32WL the fragment size has to be a multiple
 	  of 8 (see flash driver for further information).
 
-	  This setting has significant influence on RAM usage.
+	  This setting has significant influence on RAM usage. If the exact
+	  fragment size is known, use that value for MIN and MAX config to
+	  reduce memory consumption.
+
+config LORAWAN_FUOTA_MIN_FRAG_SIZE
+	int "Minimum size of transported fragments"
+	range 1 239
+	default 48
+	help
+	  Minimum size of one fragment transferred during the fragmented data
+	  block transport session of the FUOTA process. It is chosen on the
+	  server side.
+
+	  The fragment has to fit into the LoRaWAN payload, which can be up to
+	  242 bytes depending on the region and frequency settings. 3 bytes of
+	  the payload are consumed for protocol information.
+
+	  For some MCUs like the STM32WL the fragment size has to be a multiple
+	  of 8 (see flash driver for further information).
+
+	  This setting has significant influence on RAM usage. If the exact
+	  fragment size is known, use that value for MIN and MAX config to
+	  reduce memory consumption.
 
 config LORAWAN_FUOTA_FRAG_REDUNDANCY
 	int "Percentage of redundant fragments"
