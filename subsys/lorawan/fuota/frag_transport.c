@@ -255,7 +255,10 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 
 				LOG_DBG("FragDecoder process status: %d",
 					ctx[index].decoder_process_status);
-			} else if (ctx[index].decoder_process_status == FRAG_SESSION_FINISHED) {
+			} else if (ctx[index].decoder_process_status >= 0) {
+				/* Positive status corresponds to number of lost (but recovered)
+				 * fragments. Value >= 0 means the upgrade is done.
+				 */
 				fuota_frag_flash_finish();
 
 				if (fuota_ctx->finished_cb != NULL) {
