@@ -34,6 +34,10 @@ static struct k_work_q services_workq;
 
 static struct k_work_delayable uplink_work;
 
+/* Number of active class C sessions and mutex to protect access to session info */
+static int active_class_c_sessions;
+static struct k_mutex session_mutex;
+
 /* single-linked list (with pointers) and array for implementation of priority queue */
 static struct service_uplink_msg messages[10];
 static sys_slist_t msg_list;
@@ -159,6 +163,55 @@ int lorawan_services_reschedule_work(struct k_work_delayable *dwork, k_timeout_t
 	return k_work_reschedule_for_queue(&services_workq, dwork, delay);
 }
 
+int lorawan_services_class_c_start(void)
+{
+	int ret;
+
+	k_mutex_lock(&session_mutex, K_FOREVER);
+
+	if (active_class_c_sessions > 0) {
+		active_class_c_sessions++;
+		ret = active_class_c_sessions;
+	} else {
+		ret = lorawan_set_class(LORAWAN_CLASS_C);
+		if (ret == 0) {
+			LOG_DBG("Switched to class C");
+			active_class_c_sessions++;
+		}
+	}
+
+	k_mutex_unlock(&session_mutex);
+
+	return ret;
+}
+
+int lorawan_services_class_c_stop(void)
+{
+	int ret = 0;
+
+	k_mutex_lock(&session_mutex, K_FOREVER);
+
+	if (active_class_c_sessions > 1) {
+		active_class_c_sessions--;
+		ret = active_class_c_sessions;
+	} else if (active_class_c_sessions == 1) {
+		ret = lorawan_set_class(LORAWAN_CLASS_A);
+		if (ret == 0) {
+			LOG_DBG("Reverted to class A");
+			active_class_c_sessions--;
+		}
+	}
+
+	k_mutex_unlock(&session_mutex);
+
+	return ret;
+}
+
+int lorawan_services_class_c_active(void)
+{
+	return active_class_c_sessions;
+}
+
 static int lorawan_services_init(const struct device *dev)
 {
 	ARG_UNUSED(dev);
@@ -172,6 +225,8 @@ static int lorawan_services_init(const struct device *dev)
 			   CONFIG_LORAWAN_SERVICES_THREAD_PRIORITY, NULL);
 
 	k_work_init_delayable(&uplink_work, uplink_handler);
+
+	k_mutex_init(&session_mutex);
 
 	k_thread_name_set(&services_workq.thread, "lorawan_services");
 
