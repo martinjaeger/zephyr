@@ -17,6 +17,17 @@
 #include <zephyr/sys/util.h>
 #include <esp_attr.h>
 
+/*
+ * If no host is connected to the USB port, the characters cannot be sent out and the poll_out
+ * function would get stuck.
+ *
+ * USB full-speed uses a frame rate of 1 ms. Thus, a timeout of 50 ms provides plenty of safety
+ * margin even for a loaded bus.
+ *
+ * This is the same value as used in the ESP-IDF.
+ */
+#define POLL_OUT_TIMEOUT_MS (50U)
+
 struct serial_esp32_usb_config {
 	const struct device *clock_dev;
 	const clock_control_subsys_t clock_subsys;
@@ -52,12 +63,20 @@ static void serial_esp32_usb_poll_out(const struct device *dev, unsigned char c)
 {
 	ARG_UNUSED(dev);
 
-	/* Wait for space in FIFO */
-	while (usb_serial_jtag_ll_txfifo_writable() == 0) {
-		;
+	if (usb_serial_jtag_ll_txfifo_writable() == 0) {
+		int64_t first_attempt = k_uptime_get();
+
+		while (usb_serial_jtag_ll_txfifo_writable() == 0) {
+			if (k_uptime_get() > first_attempt + POLL_OUT_TIMEOUT_MS) {
+				/*
+				 * The USB cable is most likely not connected: Only retry every
+				 * 100 ms to yield the calling thread and avoid blocking the MCU.
+				 */
+				k_sleep(K_MSEC(100));
+			}
+		}
 	}
 
-	/* Send a character */
 	usb_serial_jtag_ll_write_txfifo(&c, 1);
 
 	usb_serial_jtag_ll_txfifo_flush();
