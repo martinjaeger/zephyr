@@ -79,7 +79,7 @@ static void iwdg_stm32_convert_timeout(uint32_t timeout,
 
 static int iwdg_stm32_setup(const struct device *dev, uint8_t options)
 {
-	ARG_UNUSED(dev);
+	IWDG_TypeDef *iwdg = IWDG_STM32_STRUCT(dev);
 
 	/* Deactivate running when debugger is attached. */
 	if (options & WDT_OPT_PAUSE_HALTED_BY_DBG) {
@@ -101,7 +101,7 @@ static int iwdg_stm32_setup(const struct device *dev, uint8_t options)
 		return -ENOTSUP;
 	}
 
-	/* Enable the IWDG only when the timeout is installed */
+	LL_IWDG_Enable(iwdg);
 	return 0;
 }
 
@@ -136,7 +136,6 @@ static int iwdg_stm32_install_timeout(const struct device *dev,
 
 	tickstart = k_uptime_get_32();
 
-	LL_IWDG_Enable(iwdg);
 	LL_IWDG_EnableWriteAccess(iwdg);
 
 	LL_IWDG_SetPrescaler(iwdg, prescaler);
@@ -175,10 +174,12 @@ static const struct wdt_driver_api iwdg_stm32_api = {
 static int iwdg_stm32_init(const struct device *dev)
 {
 #ifndef CONFIG_WDT_DISABLE_AT_BOOT
+	IWDG_TypeDef *iwdg = IWDG_STM32_STRUCT(dev);
 	struct wdt_timeout_cfg config = {
 		.window.max = CONFIG_IWDG_STM32_INITIAL_TIMEOUT
 	};
 
+	LL_IWDG_Enable(iwdg);
 	iwdg_stm32_install_timeout(dev, &config);
 #endif
 
