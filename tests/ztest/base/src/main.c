@@ -5,6 +5,7 @@
  */
 
 #include <zephyr/ztest.h>
+#include <float.h>
 
 ZTEST_SUITE(framework_tests, NULL, NULL, NULL, NULL, NULL);
 
@@ -14,11 +15,15 @@ ZTEST(framework_tests, test_empty_test)
 
 ZTEST(framework_tests, test_assert_tests)
 {
+	printf("FLT_EVAL_METHOD: %d\n", FLT_EVAL_METHOD);
+
+	float f = 4.56F;
 	zassert_true(1);
 	zassert_false(0);
 	zassert_is_null(NULL, NULL);
 	zassert_not_null("foo", NULL);
 	zassert_equal(1, 1);
+	zassert_equal(f, 4.56F); /* fails */
 	zassert_equal_ptr(NULL, NULL, NULL);
 }
 
