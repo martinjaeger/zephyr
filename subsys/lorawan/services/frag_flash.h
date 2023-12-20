@@ -32,7 +32,11 @@ int frag_flash_init(uint32_t frag_size);
  *
  * @returns 0 for success, otherwise negative error code
  */
+#if defined(CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_SEMTECH)
 int8_t frag_flash_write(uint32_t addr, uint8_t *data, uint32_t size);
+#elif defined(CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_JIAPENGLI)
+int frag_flash_write(uint32_t addr, const uint8_t *data, uint32_t size);
+#endif
 
 /**
  * Read back data from flash.
@@ -45,7 +49,12 @@ int8_t frag_flash_write(uint32_t addr, uint8_t *data, uint32_t size);
  *
  * @returns 0 for success, otherwise negative error code
  */
+#if defined(CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_SEMTECH)
 int8_t frag_flash_read(uint32_t addr, uint8_t *data, uint32_t size);
+#elif defined(CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_JIAPENGLI)
+int frag_flash_read(uint32_t addr, uint8_t *data, uint32_t size);
+#endif
+
 
 /**
  * Start caching fragments in RAM.
