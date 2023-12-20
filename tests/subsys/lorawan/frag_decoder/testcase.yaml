@@ -2,6 +2,11 @@ common:
   tags:
     - lorawan
 tests:
-  lorawan.frag_decoder:
+  lorawan.frag_decoder.semtech:
     platform_allow:
       - native_sim
+  lorawan.frag_decoder.jiapengli:
+    platform_allow:
+      - native_sim
+    extra_configs:
+      - CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_JIAPENGLI=y
