@@ -68,6 +68,22 @@ config LORAWAN_FRAG_TRANSPORT
 
 	  This service uses port 201.
 
+choice LORAWAN_FRAG_TRANSPORT_DECODER
+	bool "Fragmented Data Block Transport decoder implementation"
+	default LORAWAN_FRAG_TRANSPORT_DECODER_SEMTECH
+
+config LORAWAN_FRAG_TRANSPORT_DECODER_SEMTECH
+	bool "Semtech"
+	help
+	  The default decoder implementation from LoRaMAC-node.
+
+config LORAWAN_FRAG_TRANSPORT_DECODER_JIAPENGLI
+	bool "JiapengLi"
+	help
+	  Implementation from Jiapeng Li with reduced RAM footprint.
+
+endchoice # LORAWAN_FRAG_TRANSPORT_DECODER
+
 config LORAWAN_FRAG_TRANSPORT_VERSION
 	int "Fragmented Data Block Transport Specification"
 	depends on LORAWAN_FRAG_TRANSPORT

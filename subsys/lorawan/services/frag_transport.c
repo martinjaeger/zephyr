@@ -10,10 +10,16 @@
  */
 
 #include "frag_flash.h"
+#ifdef CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_JIAPENGLI
+#include "frag_dec_jiapengli.h"
+#endif
 #include "lorawan_services.h"
 
 #include <LoRaMac.h>
+#ifdef CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_SEMTECH
 #include <FragDecoder.h>
+#endif
+
 #include <zephyr/lorawan/lorawan.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/random/random.h>
@@ -26,6 +32,21 @@ LOG_MODULE_REGISTER(lorawan_frag_transport, CONFIG_LORAWAN_SERVICES_LOG_LEVEL);
 
 /* maximum number of parallel frag sessions according to the standard */
 #define FRAG_TRANSPORT_MAX_SESSIONS (4)
+
+#ifdef CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_JIAPENGLI
+
+#define FRAG_MAX_NB                                                                                \
+	(CONFIG_LORAWAN_FRAG_TRANSPORT_IMAGE_SIZE / CONFIG_LORAWAN_FRAG_TRANSPORT_MIN_FRAG_SIZE +  \
+	 1U)
+#define FRAG_MAX_SIZE  (CONFIG_LORAWAN_FRAG_TRANSPORT_MAX_FRAG_SIZE)
+#define FRAG_TOLERANCE (FRAG_MAX_NB * CONFIG_LORAWAN_FRAG_TRANSPORT_MAX_REDUNDANCY / 100U)
+
+#define DEC_BUF_SIZE                                                                               \
+	(((BM_UNIT - 1) * 5 + FRAG_MAX_NB * 2 + FRAG_TOLERANCE * (FRAG_TOLERANCE + 5) / 2) /       \
+		 BM_UNIT * sizeof(bm_t) +                                                          \
+	 FRAG_MAX_SIZE * 2 + 7 * 4) /* alignment */
+
+#endif /* CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_JIAPENGLI */
 
 enum frag_transport_commands {
 	FRAG_TRANSPORT_CMD_PKG_VERSION = 0x00,
@@ -73,10 +94,12 @@ struct frag_transport_context {
 	uint8_t padding;
 	/** Application-specific descriptor for the data block, e.g. firmware version */
 	uint32_t descriptor;
-
+	/** Status of frag decoder */
+	int decoder_process_status;
+#ifdef CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_SEMTECH
 	/* variables required for FragDecoder.h */
 	FragDecoderCallbacks_t decoder_callbacks;
-	int32_t decoder_process_status;
+#endif /* CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_SEMTECH */
 };
 
 /*
@@ -84,6 +107,11 @@ struct frag_transport_context {
  * though the standard allows up to 4 sessions
  */
 static struct frag_transport_context ctx;
+
+#ifdef CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_JIAPENGLI
+frag_dec_t decoder;
+static uint8_t dec_buf[DEC_BUF_SIZE];
+#endif
 
 /* Callback for notification of finished firmware transfer */
 static void (*finished_cb)(void);
@@ -124,8 +152,12 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 
 			uint8_t missing_frag = CLAMP(ctx.nb_frag - ctx.nb_frag_received, 0, 255);
 
+#ifdef CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_SEMTECH
 			FragDecoderStatus_t decoder_status = FragDecoderGetStatus();
 			uint8_t memory_error = decoder_status.MatrixError;
+#elif defined(CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_JIAPENGLI)
+			uint8_t memory_error = 0; /* ToDo */
+#endif
 
 			if (participants == 1 || missing_frag > 0) {
 #if CONFIG_LORAWAN_FRAG_TRANSPORT_VERSION == 1
@@ -196,8 +228,7 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 				status |= 1U << 0;
 			}
 
-			if (ctx.nb_frag > FRAG_MAX_NB || ctx.frag_size > FRAG_MAX_SIZE ||
-			    ctx.nb_frag * ctx.frag_size > FragDecoderGetMaxFileSize()) {
+			if (ctx.nb_frag > FRAG_MAX_NB || ctx.frag_size > FRAG_MAX_SIZE) {
 				/* Not enough memory */
 				status |= 1U << 1;
 			}
@@ -205,22 +236,43 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 			/* Descriptor not used: Ignore Wrong Descriptor error */
 
 			if ((status & 0x1F) == 0) {
-				/*
-				 * Assign callbacks after initialization to prevent the FragDecoder
-				 * from writing byte-wise 0xFF to the entire flash. Instead, erase
-				 * flash properly with own implementation.
-				 */
-				ctx.decoder_callbacks.FragDecoderWrite = NULL;
-				ctx.decoder_callbacks.FragDecoderRead = NULL;
+#ifdef CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_SEMTECH
+				if (ctx.nb_frag * ctx.frag_size > FragDecoderGetMaxFileSize()) {
+					/* Not enough memory */
+					status |= 1U << 1;
+				} else {
+					/*
+					 * Assign callbacks after initialization to prevent the
+					 * FragDecoder from writing byte-wise 0xFF to the entire
+					 * flash. Instead, erase flash properly with own
+					 * implementation.
+					 */
+					ctx.decoder_callbacks.FragDecoderWrite = NULL;
+					ctx.decoder_callbacks.FragDecoderRead = NULL;
 
-				FragDecoderInit(ctx.nb_frag, ctx.frag_size, &ctx.decoder_callbacks);
+					FragDecoderInit(ctx.nb_frag, ctx.frag_size,
+							&ctx.decoder_callbacks);
 
-				ctx.decoder_callbacks.FragDecoderWrite = frag_flash_write;
-				ctx.decoder_callbacks.FragDecoderRead = frag_flash_read;
+					ctx.decoder_callbacks.FragDecoderWrite = frag_flash_write;
+					ctx.decoder_callbacks.FragDecoderRead = frag_flash_read;
 
-				frag_flash_init(ctx.frag_size);
-				ctx.is_active = true;
-				ctx.decoder_process_status = FRAG_SESSION_ONGOING;
+					frag_flash_init(ctx.frag_size);
+					ctx.is_active = true;
+					ctx.decoder_process_status = FRAG_SESSION_ONGOING;
+				}
+#elif defined(CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_JIAPENGLI)
+				decoder.cfg.nb = ctx.nb_frag;
+				decoder.cfg.size = ctx.frag_size;
+				if (frag_dec_init(&decoder) < 0) {
+					/* Not enough memory */
+					status |= 1U << 1;
+					LOG_ERR("dec_buf not large enough.");
+				} else {
+					frag_flash_init(ctx.frag_size);
+					ctx.is_active = true;
+					ctx.decoder_process_status = FRAG_DEC_ONGOING;
+				}
+#endif
 			}
 
 			tx_buf[tx_pos++] = FRAG_TRANSPORT_CMD_FRAG_SESSION_SETUP;
@@ -264,17 +316,24 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 				break;
 			}
 
-			if (ctx.decoder_process_status == FRAG_SESSION_ONGOING) {
-				if (frag_counter > ctx.nb_frag) {
-					/* Additional fragments have to be cached in RAM for
-					 * recovery algorithm.
-					 */
-					frag_flash_use_cache();
-				}
+			if (frag_counter > ctx.nb_frag) {
+				/* Additional fragments have to be cached in RAM for recovery
+				 * algorithm.
+				 */
+				frag_flash_use_cache();
+			}
 
+#ifdef CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_SEMTECH
+			if (ctx.decoder_process_status == FRAG_SESSION_ONGOING) {
 				ctx.decoder_process_status = FragDecoderProcess(
 					frag_counter, (uint8_t *)&rx_buf[rx_pos]);
 			}
+#elif defined(CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_JIAPENGLI)
+			if (ctx.decoder_process_status == FRAG_DEC_ONGOING) {
+				ctx.decoder_process_status = frag_dec(
+					&decoder, frag_counter, &rx_buf[rx_pos], ctx.frag_size);
+			}
+#endif /* CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_* */
 
 			LOG_INF("DataFragment %u of %u (%u lost), session: %u, decoder result: %d",
 				frag_counter, ctx.nb_frag, frag_counter - ctx.nb_frag_received,
@@ -292,9 +351,8 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 					finished_cb();
 				}
 
-				ctx.is_active = false;
 				/* avoid processing further fragments */
-				ctx.decoder_process_status = FRAG_SESSION_NOT_STARTED;
+				ctx.is_active = false;
 			}
 
 			rx_pos += ctx.frag_size;
@@ -320,8 +378,16 @@ int lorawan_frag_transport_run(void (*transport_finished_cb)(void))
 {
 	finished_cb = transport_finished_cb;
 
+#if defined(CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_SEMTECH)
 	/* initialize non-zero static variables */
 	ctx.decoder_process_status = FRAG_SESSION_NOT_STARTED;
+#elif defined(CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_JIAPENGLI)
+	decoder.cfg.dt = dec_buf;
+	decoder.cfg.maxlen = sizeof(dec_buf);
+	decoder.cfg.tolerence = FRAG_TOLERANCE;
+	decoder.cfg.frd_func = frag_flash_read;
+	decoder.cfg.fwr_func = frag_flash_write;
+#endif
 
 	lorawan_register_downlink_callback(&downlink_cb);
 
