@@ -103,6 +103,10 @@ int main(void)
 	lorawan_clock_sync_run();
 #endif
 
+#ifdef CONFIG_LORAWAN_REMOTE_MULTICAST
+	lorawan_remote_multicast_run();
+#endif
+
 	LOG_INF("Sending data...");
 	while (1) {
 		ret = lorawan_send(2, data, sizeof(data),
