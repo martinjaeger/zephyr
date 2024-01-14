@@ -1,0 +1,12 @@
+common:
+  tags:
+    - lorawan
+tests:
+  lorawan.frag_decoder.semtech:
+    integration_platforms:
+      - native_sim
+  lorawan.frag_decoder.jiapengli:
+    integration_platforms:
+      - native_sim
+    extra_configs:
+      - CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_JIAPENGLI=y
