@@ -10,8 +10,6 @@
 
 #include <zephyr/logging/log.h>
 
-#define FRAG_COMPRESS_MATRIX_SIZE
-
 LOG_MODULE_REGISTER(lorawan_frag_dec, CONFIG_LORAWAN_SERVICES_LOG_LEVEL);
 
 static bool is_power2(uint32_t num)
@@ -26,35 +24,6 @@ static uint32_t prbs23(uint32_t x)
 	b0 = (x & 0x00000001);
 	b1 = (x & 0x00000020) >> 5;
 	return (x >> 1) + ((b0 ^ b1) << 22);
-}
-
-/*
-n: FragIndex
-m: NubFrag
-buf: length is greater than m
-*/
-static int matrix_line(uint8_t *buf, int n, int m)
-{
-	int mm, x, nbCoeff, r;
-
-	mm = 0;
-	if (is_power2(m)) {
-		mm = 1;
-	}
-	mm += m;
-
-	x = 1 + (1001 * n);
-
-	for (nbCoeff = 0; nbCoeff < (m / 2); nbCoeff++) {
-		r = (1 << 16);
-		while (r >= m) {
-			x = prbs23(x);
-			r = x % mm;
-		}
-		buf[r] = 1;
-	}
-
-	return 0;
 }
 
 /* n: index of the uncoded and coded fragmentations, maximum N - 1, starts from 0 */
@@ -101,50 +70,6 @@ static int buf_xor(uint8_t *des, uint8_t *src, int len)
 	return 0;
 }
 
-/*
-unit: m
-*/
-int frag_enc(frag_enc_t *obj, uint8_t *buf, int len, int unit, int cr)
-{
-	int i, j, k;
-	int num, maxlen;
-	uint8_t *mline;
-	uint8_t *rline;
-
-	if ((len % unit) != 0) {
-		return -1;
-	}
-
-	num = len / unit;
-	maxlen = len + cr * unit + num * cr;
-	if (maxlen > obj->maxlen) {
-		LOG_INF("maxlen: %d, input buffer: %d", maxlen, obj->maxlen);
-		return -2;
-	}
-
-	obj->unit = unit;
-	obj->num = num;
-	obj->cr = cr;
-	obj->line = obj->dt;
-	obj->rline = obj->dt + len;
-	obj->mline = obj->dt + len + cr * unit;
-
-	memcpy(obj->dt + 0, buf, len);
-	mline = obj->mline;
-	rline = obj->rline;
-	for (i = 0; i < cr; i++, mline += num, rline += unit) {
-		matrix_line(mline, i + 1, num);
-		for (j = 0; j < num; j++) {
-			if (mline[j] == 1) {
-				for (k = 0; k < unit; k++) {
-					rline[k] ^= buf[j * unit + k];
-				}
-			}
-		}
-	}
-	return 0;
-}
-
 /* #define ALIGN4(x)           (x) = (((x) + 0x03) & ~0x03) */
 #define ALIGN4(x) (x) = (x)
 int frag_dec_init(frag_dec_t *obj)
@@ -162,13 +87,9 @@ int frag_dec_init(frag_dec_t *obj)
 
 	ALIGN4(i);
 	obj->lost_frm_matrix_bm = (bm_t *)(obj->cfg.dt + i);
-#ifdef FRAG_COMPRESS_MATRIX_SIZE
 	/* left below of the matrix is useless compress used memory */
 	i += (obj->cfg.tolerence * (obj->cfg.tolerence + 1) / 2 + BM_UNIT - 1) / BM_UNIT *
 	     sizeof(bm_t);
-#else
-	i += (obj->cfg.tolerence * obj->cfg.tolerence + BM_UNIT - 1) / BM_UNIT * sizeof(bm_t);
-#endif /* FRAG_COMPRESS_MATRIX_SIZE */
 
 	ALIGN4(i);
 	obj->matched_lost_frm_bm0 = (bm_t *)(obj->cfg.dt + i);
@@ -219,22 +140,21 @@ void frag_dec_frame_received(frag_dec_t *obj, uint16_t index)
 void frag_dec_flash_wr(frag_dec_t *obj, uint16_t index, const uint8_t *buf)
 {
 	obj->cfg.fwr_func(index * obj->cfg.size, buf, obj->cfg.size);
-#ifdef DEBUG
+	/*
 	LOG_DBG("-> index %d, ", index);
 	LOG_HEXDUMP_DBG(buf, obj->cfg.size);
-#endif
+	*/
 }
 
 void frag_dec_flash_rd(frag_dec_t *obj, uint16_t index, uint8_t *buf)
 {
 	obj->cfg.frd_func(index * obj->cfg.size, buf, obj->cfg.size);
-#ifdef DEBUG
+	/*
 	LOG_DBG("<- index %d, ", index);
 	LOG_HEXDUMP_DBG(buf, obj->cfg.size);
-#endif
+	*/
 }
 
-#ifdef FRAG_COMPRESS_MATRIX_SIZE
 void frag_dec_lost_frm_matrix_save(frag_dec_t *obj, uint16_t lindex, bm_t *map, int len)
 {
 	for (int i = 0; i < len; i++) {
@@ -261,39 +181,6 @@ bool frag_dec_lost_frm_matrix_is_diagonal(frag_dec_t *obj, uint16_t lindex, int 
 {
 	return m2t_get(obj->lost_frm_matrix_bm, lindex, lindex, len);
 }
-#else
-void frag_dec_lost_frm_matrix_save(frag_dec_t *obj, uint16_t lindex, bm_t *map, int len)
-{
-	int i, offset;
-
-	offset = lindex * len;
-	for (i = 0; i < len; i++) {
-		if (bit_get(map, i)) {
-			bit_set(obj->lost_frm_matrix_bm, offset + i);
-		} else {
-			bit_clr(obj->lost_frm_matrix_bm, offset + i);
-		}
-	}
-}
-
-void frag_dec_lost_frm_matrix_load(frag_dec_t *obj, uint16_t lindex, bm_t *map, int len)
-{
-	int i, offset;
-	offset = lindex * len;
-	for (i = 0; i < len; i++) {
-		if (bit_get(obj->lost_frm_matrix_bm, offset + i)) {
-			bit_set(map, i);
-		} else {
-			bit_clr(map, i);
-		}
-	}
-}
-
-bool frag_dec_lost_frm_matrix_is_diagonal(frag_dec_t *obj, uint16_t lindex, int len)
-{
-	return bit_get(obj->lost_frm_matrix_bm, lindex * len + lindex);
-}
-#endif
 
 /* fcnt from 1 to nb */
 int frag_dec(frag_dec_t *obj, uint16_t fcnt, const uint8_t *buf, int len)
@@ -483,11 +370,7 @@ void frag_dec_log_matrix_bits(bm_t *bitmap, int len)
 
 	for (i = 0; i < len; i++) {
 		for (j = 0; j < len; j++) {
-#ifdef FRAG_COMPRESS_MATRIX_SIZE
 			if (m2t_get(bitmap, j, i, len)) {
-#else
-			if (bit_get(bitmap, j + i * len)) {
-#endif
 				printf("1 ");
 			} else {
 				printf("0 ");

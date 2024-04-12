@@ -27,18 +27,6 @@
 #define FRAG_DEC_ERR_1                   (-4)
 #define FRAG_DEC_ERR_2                   (-5)
 
-typedef struct {
-	uint8_t *dt;
-	uint32_t maxlen;
-
-	uint32_t unit;
-	uint32_t num;
-	uint32_t cr;
-	uint8_t *line;
-	uint8_t *mline;
-	uint8_t *rline;
-} frag_enc_t;
-
 typedef int (*flash_rd_t)(uint32_t addr, uint8_t *buf, uint32_t len);
 typedef int (*flash_wr_t)(uint32_t addr, const uint8_t *buf, uint32_t len);
 
@@ -78,8 +66,6 @@ typedef struct {
 	uint8_t *row_data_buf;
 	uint8_t *xor_row_data_buf;
 } frag_dec_t;
-
-int frag_enc(frag_enc_t *obj, uint8_t *buf, int len, int unit, int cr);
 
 int frag_dec_init(frag_dec_t *obj);
 int frag_dec(frag_dec_t *obj, uint16_t fcnt, const uint8_t *buf, int len);
