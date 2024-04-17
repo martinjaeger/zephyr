@@ -53,10 +53,10 @@ LOG_MODULE_REGISTER(lorawan_frag_transport, CONFIG_LORAWAN_SERVICES_LOG_LEVEL);
 #define FRAG_MAX_SIZE  (CONFIG_LORAWAN_FRAG_TRANSPORT_MAX_FRAG_SIZE)
 #define FRAG_TOLERANCE (FRAG_MAX_NB * CONFIG_LORAWAN_FRAG_TRANSPORT_MAX_REDUNDANCY / 100U)
 
-#define DEC_BUF_SIZE                                                                               \
-	(((BM_UNIT - 1) * 5 + FRAG_MAX_NB * 2 + FRAG_TOLERANCE * (FRAG_TOLERANCE + 5) / 2) /       \
-		 BM_UNIT * sizeof(bm_t) +                                                          \
-	 FRAG_MAX_SIZE * 2 + 7 * 4) /* alignment */
+// #define DEC_BUF_SIZE                                                                               \
+// 	(((BM_UNIT - 1) * 5 + FRAG_MAX_NB * 2 + FRAG_TOLERANCE * (FRAG_TOLERANCE + 5) / 2) /       \
+// 		 BM_UNIT * sizeof(bm_t) +                                                          \
+// 	 FRAG_MAX_SIZE * 2 + 7 * 4) /* alignment */
 
 #endif /* CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_JIAPENGLI */
 
@@ -115,7 +115,7 @@ static struct frag_transport_context ctx;
 
 #ifdef CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_JIAPENGLI
 frag_dec_t decoder;
-static uint8_t dec_buf[DEC_BUF_SIZE];
+//static uint8_t dec_buf[DEC_BUF_SIZE];
 #endif
 
 /* Callback for notification of finished firmware transfer */
@@ -363,8 +363,8 @@ int lorawan_frag_transport_run(void (*transport_finished_cb)(void))
 	/* initialize non-zero static variables */
 	ctx.decoder_process_status = FRAG_SESSION_NOT_STARTED;
 #elif defined(CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_JIAPENGLI)
-	decoder.cfg.dt = dec_buf;
-	decoder.cfg.maxlen = sizeof(dec_buf);
+	// decoder.cfg.dt = dec_buf;
+	// decoder.cfg.maxlen = sizeof(dec_buf);
 	decoder.cfg.tolerence = FRAG_TOLERANCE;
 	decoder.cfg.frd_func = frag_flash_read;
 	decoder.cfg.fwr_func = frag_flash_write;

@@ -39,8 +39,8 @@ But since there's no C/C++ functionality for them, they're only accessible via c
 
 #if defined BM_4
 typedef uint32_t bm_t;
-#define BM_UNIT (sizeof(bm_t) * 8)
-#define BM_OFST (5) /* 8: 3, 16: 4, 32: 5 */
+#define BM_UNIT (sizeof(bm_t) * 8)              // 32
+#define BM_OFST (5) /* 8: 3, 16: 4, 32: 5 */    // amount of bits the index must be shifted
 #elif defined BM_2
 typedef uint16_t bm_t;
 #define BM_UNIT (sizeof(bm_t) * 8)

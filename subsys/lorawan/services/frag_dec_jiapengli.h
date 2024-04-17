@@ -14,7 +14,9 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include "bitmap.h"
+//#include "bitmap.h"
+
+#include <zephyr/sys/bitarray.h>
 
 /*
  * https://github.com/brocaar/lorawan/blob/master/applayer/fragmentation/encode.go
@@ -31,11 +33,11 @@ typedef int (*flash_rd_t)(uint32_t addr, uint8_t *buf, uint32_t len);
 typedef int (*flash_wr_t)(uint32_t addr, const uint8_t *buf, uint32_t len);
 
 typedef struct {
-	uint8_t *dt;
-	uint32_t maxlen;
-	uint16_t nb;
-	uint8_t size;
-	uint16_t tolerence;
+	//uint8_t *dt; 		// pointer to the data in the array
+	//uint32_t maxlen;	// data buffer size
+	uint16_t nb;		// number of frags
+	uint8_t size;		// frag size
+	uint16_t tolerence;	// number of additional frags
 	flash_rd_t frd_func;
 	flash_wr_t fwr_func;
 } frag_dec_cfg_t;
@@ -54,23 +56,23 @@ typedef struct {
 
 	frag_dec_sta_t sta;
 
-	bm_t *lost_frm_bm;
+	struct sys_bitarray *lost_frm_bm;
 	uint16_t lost_frm_count;
-	bm_t *lost_frm_matrix_bm;
+	struct sys_bitarray *lost_frm_matrix_bm;
 	uint16_t filled_lost_frm_count;
 
 	/* temporary buffer */
-	bm_t *matched_lost_frm_bm0;
-	bm_t *matched_lost_frm_bm1;
-	bm_t *matrix_line_bm;
-	uint8_t *row_data_buf;
-	uint8_t *xor_row_data_buf;
+	struct sys_bitarray *matched_lost_frm_bm0;
+	struct sys_bitarray *matched_lost_frm_bm1;
+	struct sys_bitarray *matrix_line_bm;
+	uint8_t row_data_buf[CONFIG_LORAWAN_FRAG_TRANSPORT_MAX_FRAG_SIZE];
+	uint8_t xor_row_data_buf[CONFIG_LORAWAN_FRAG_TRANSPORT_MAX_FRAG_SIZE];
 } frag_dec_t;
 
 int frag_dec_init(frag_dec_t *obj);
 int frag_dec(frag_dec_t *obj, uint16_t fcnt, const uint8_t *buf, int len);
 
-void frag_dec_log_bits(bm_t *bitmap, int len);
+void frag_dec_log_bits(struct sys_bitarray *bitmap, int len);
 void frag_dec_log_buf(const uint8_t *buf, int len);
 void frag_dec_log(frag_dec_t *obj);
 

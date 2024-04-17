@@ -238,6 +238,55 @@ out:
 	return ret;
 }
 
+int sys_bitarray_xor(sys_bitarray_t *dst, sys_bitarray_t *src)
+{
+	k_spinlock_key_t key_dst, key_src;
+	int ret;
+	size_t idx, off;
+
+	key_dst = k_spin_lock(&dst->lock);
+	key_src = k_spin_lock(&src->lock);
+
+	__ASSERT_NO_MSG(dst != NULL);
+	__ASSERT_NO_MSG(dst->num_bits > 0);
+	__ASSERT_NO_MSG(src != NULL);
+	__ASSERT_NO_MSG(src->num_bits > 0);
+
+	if (dst->num_bits != src->num_bits) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	for (size_t idx = 0; idx < dst->num_bundles; idx++) {
+		dst->bundles[idx] ^= src->bundles[idx];
+	}
+
+	ret = 0;
+
+out:
+	k_spin_unlock(&dst->lock, key_dst);
+	k_spin_unlock(&src->lock, key_src);
+	return ret;
+}
+
+int sys_bitarray_popcount_region(sys_bitarray_t *bitarray, size_t num_bits,
+			      size_t offset, size_t *count)
+{
+	k_spinlock_key_t key;
+
+	key = k_spin_lock(&bitarray->lock);
+
+	__ASSERT_NO_MSG(bitarray != NULL);
+	__ASSERT_NO_MSG(bitarray->num_bits > 0);
+
+	for (size_t idx = 0; idx < bitarray->num_bundles; idx++) {
+		*count += POPCOUNT(bitarray->bundles[idx]);
+	}
+
+	k_spin_unlock(&bitarray->lock, key);
+	return 0;
+}
+
 int sys_bitarray_clear_bit(sys_bitarray_t *bitarray, size_t bit)
 {
 	k_spinlock_key_t key;
@@ -446,6 +495,57 @@ int sys_bitarray_alloc(sys_bitarray_t *bitarray, size_t num_bits,
 		 * the mismatched bit.
 		 */
 		bit_idx = mismatch + 1;
+	}
+
+out:
+	k_spin_unlock(&bitarray->lock, key);
+	return ret;
+}
+
+int sys_bitarray_find_nth_set(sys_bitarray_t *bitarray, size_t n, size_t *bit)
+{
+	k_spinlock_key_t key;
+	size_t count = 0;
+	int ret;
+
+	__ASSERT_NO_MSG(bitarray != NULL);
+	__ASSERT_NO_MSG(bitarray->num_bits > 0);
+
+	key = k_spin_lock(&bitarray->lock);
+
+	CHECKIF(bit == NULL) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	count = 0;
+	ret = -EFAULT;
+
+	for (size_t idx = 0; idx < bitarray->num_bundles; idx++) {
+		if (bitarray->bundles[idx] != 0U) {
+			if (n == 1) {
+				/* Find the first free bit in bundle and we are done */
+				*bit = idx * bundle_bitness(bitarray) +
+							find_lsb_set(bitarray->bundles[idx]) - 1;
+				ret = 0;
+				goto out;
+			}
+
+			count += POPCOUNT(bitarray->bundles[idx]);
+			if (count >= n) {
+				for (int j = bundle_bitness(bitarray) - 1; j >= 0; j--) {
+					if (bitarray->bundles[idx] & BIT(j)) {
+						if (count == n) {
+							*bit = idx * bundle_bitness(bitarray) + j;
+							ret = 0;
+							goto out;
+						}
+						count--;
+					}
+				}
+
+			}
+		}
 	}
 
 out:

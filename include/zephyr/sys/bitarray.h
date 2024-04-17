@@ -168,6 +168,14 @@ int sys_bitarray_test_and_clear_bit(sys_bitarray_t *bitarray, size_t bit, int *p
 int sys_bitarray_alloc(sys_bitarray_t *bitarray, size_t num_bits,
 		       size_t *offset);
 
+int sys_bitarray_find_nth_set(sys_bitarray_t *bitarray, size_t n, size_t *bit);
+
+/* calculates result of dst ^= src */
+int sys_bitarray_xor(sys_bitarray_t *dst, sys_bitarray_t *src);
+
+int sys_bitarray_popcount_region(sys_bitarray_t *bitarray, size_t num_bits,
+			      size_t offset, size_t *count);
+
 /**
  * Free bits in a bit array
  *
