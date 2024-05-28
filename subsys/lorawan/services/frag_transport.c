@@ -294,9 +294,14 @@ static void frag_transport_package_callback(uint8_t port, bool data_pending, int
 			}
 #endif /* CONFIG_LORAWAN_FRAG_TRANSPORT_DECODER_* */
 
-			LOG_INF("DataFragment %u of %u (%u lost), session: %u, decoder result: %d",
+			FragDecoderStatus_t decoder_status = FragDecoderGetStatus();
+			uint8_t memory_error = decoder_status.MatrixError;
+
+
+			LOG_INF("DataFragment %u of %u (%u lost), session: %u, decoder result: %d, "
+				"memory error: %d",
 				frag_counter, ctx.nb_frag, frag_counter - ctx.nb_frag_received,
-				index, ctx.decoder_process_status);
+				index, ctx.decoder_process_status, memory_error);
 
 			if (ctx.decoder_process_status >= 0) {
 				/* Positive status corresponds to number of lost (but recovered)

@@ -19,8 +19,7 @@
 #define FRAG_SIZE       CONFIG_LORAWAN_FRAG_TRANSPORT_MAX_FRAG_SIZE
 #define FIRMWARE_SIZE   (FRAG_SIZE * 100 + 1) /* not divisible by frag size to test padding */
 #define UNCODED_FRAGS   (DIV_ROUND_UP(FIRMWARE_SIZE, FRAG_SIZE))
-#define REDUNDANT_FRAGS \
-	(DIV_ROUND_UP(UNCODED_FRAGS * CONFIG_LORAWAN_FRAG_TRANSPORT_MAX_REDUNDANCY, 100))
+#define REDUNDANT_FRAGS UNCODED_FRAGS /* Redundancy of 100% for testing */
 #define PADDING         (UNCODED_FRAGS * FRAG_SIZE - FIRMWARE_SIZE)
 
 #define CMD_FRAG_SESSION_SETUP (0x02)
@@ -40,27 +39,28 @@ static const struct flash_area *fa;
 
 static struct k_sem fuota_finished_sem;
 
+static const uint8_t frag_session_setup_req[] = {
+	CMD_FRAG_SESSION_SETUP,
+	0x1f,
+	UNCODED_FRAGS & 0xFF,
+	(UNCODED_FRAGS >> 8) & 0xFF,
+	FRAG_SIZE,
+	0x01,
+	PADDING,
+	0x00,
+	0x00,
+	0x00,
+	0x00,
+};
+
 static void fuota_finished(void)
 {
 	k_sem_give(&fuota_finished_sem);
 }
 
-ZTEST(frag_decoder, test_frag_transport)
+ZTEST(frag_decoder, test_successful_decoding)
 {
 	uint8_t buf[256]; /* maximum size of one LoRaWAN message */
-	uint8_t frag_session_setup_req[] = {
-		CMD_FRAG_SESSION_SETUP,
-		0x1f,
-		UNCODED_FRAGS & 0xFF,
-		(UNCODED_FRAGS >> 8) & 0xFF,
-		FRAG_SIZE,
-		0x01,
-		PADDING,
-		0x00,
-		0x00,
-		0x00,
-		0x00,
-	};
 	int ret;
 
 	k_sem_reset(&fuota_finished_sem);
@@ -71,6 +71,40 @@ ZTEST(frag_decoder, test_frag_transport)
 	for (int i = 0; i < sizeof(fw_coded) / FRAG_SIZE; i++) {
 		if (i % 10 == 9) {
 			/* loose every 10th packet */
+			continue;
+		}
+		buf[0] = CMD_DATA_FRAGMENT;
+		buf[1] = (i + 1) & 0xFF;
+		buf[2] = (FRAG_SESSION_INDEX << 6) | ((i + 1) >> 8);
+		memcpy(buf + 3, fw_coded + i * FRAG_SIZE, FRAG_SIZE);
+		lorawan_emul_send_downlink(FRAG_TRANSPORT_PORT, false, 0, 0, FRAG_SIZE + 3, buf);
+	}
+
+	for (int i = 0; i < UNCODED_FRAGS; i++) {
+		size_t num_bytes = (i == UNCODED_FRAGS - 1) ? (FRAG_SIZE - PADDING) : FRAG_SIZE;
+
+		flash_area_read(fa, i * FRAG_SIZE, buf, num_bytes);
+		zassert_mem_equal(buf, fw_coded + i * FRAG_SIZE, num_bytes, "fragment %d invalid",
+				  i + 1);
+	}
+
+	ret = k_sem_take(&fuota_finished_sem, K_MSEC(100));
+	zassert_equal(ret, 0, "FUOTA finish timed out");
+}
+
+ZTEST(frag_decoder, test_too_few_fragments)
+{
+	uint8_t buf[256]; /* maximum size of one LoRaWAN message */
+	int ret;
+
+	k_sem_reset(&fuota_finished_sem);
+
+	lorawan_emul_send_downlink(FRAG_TRANSPORT_PORT, false, 0, 0, sizeof(frag_session_setup_req),
+				   frag_session_setup_req);
+
+	for (int i = 0; i < sizeof(fw_coded) / FRAG_SIZE; i++) {
+		if (i % 3 == 2) {
+			/* loose every 3rd packet */
 			continue;
 		}
 		buf[0] = CMD_DATA_FRAGMENT;
