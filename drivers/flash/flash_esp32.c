@@ -177,6 +177,45 @@ static int flash_esp32_erase(const struct device *dev, off_t start, size_t len)
 	return 0;
 }
 
+static int flash_esp32_is_erased(const struct device *dev, off_t start, size_t len)
+{
+	uint8_t buffer[FLASH_WRITE_BLK_SZ];
+	int ret = 1;
+
+	flash_esp32_sem_take(dev);
+
+	while (true) {
+		/*
+		 * We do not use the esp_flash_read_encrypted here, as we need the physical flash
+		 * content.
+		 */
+		size_t read_len = MIN(len, sizeof(buffer));
+		if (esp_flash_read(NULL, buffer, start, read_len) != 0) {
+			LOG_ERR("esp_flash_read failed %d", ret);
+			ret = -EIO;
+			goto out;
+		}
+
+		for (int i = 0; i < read_len; i++) {
+			if (buffer[i] != flash_esp32_parameters.erase_value) {
+				ret = 0;
+				goto out;
+			}
+		}
+
+		if (len > read_len) {
+			start += read_len;
+			len -= read_len;
+		} else {
+			break;
+		}
+	}
+
+out:
+	flash_esp32_sem_give(dev);
+	return ret;
+}
+
 #if CONFIG_FLASH_PAGE_LAYOUT
 static const struct flash_pages_layout flash_esp32_pages_layout = {
 	.pages_count = DT_REG_SIZE(SOC_NV_FLASH_NODE) / FLASH_ERASE_BLK_SZ,
@@ -215,6 +254,7 @@ static DEVICE_API(flash, flash_esp32_driver_api) = {
 	.read = flash_esp32_read,
 	.write = flash_esp32_write,
 	.erase = flash_esp32_erase,
+	.is_erased = flash_esp32_is_erased,
 	.get_parameters = flash_esp32_get_parameters,
 #ifdef CONFIG_FLASH_PAGE_LAYOUT
 	.page_layout = flash_esp32_page_layout,
