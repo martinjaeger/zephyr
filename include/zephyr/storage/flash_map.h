@@ -204,6 +204,22 @@ int flash_area_write(const struct flash_area *fa, off_t off, const void *src,
 int flash_area_erase(const struct flash_area *fa, off_t off, size_t len);
 
 /**
+ * @brief Check if flash area is erased
+ *
+ * Checks if the physical flash is in the erased state. This function should
+ * be used instead of flash_area_read() when the flash is encrypted.
+ *
+ * @param[in] fa  Flash area
+ * @param[in] off Offset relative from beginning of flash area.
+ * @param[in] len Number of bytes to check
+ *
+ * @retval 1 Flash area is in erased state
+ * @retval 0 Flash area is not erased
+ * @retval errno Negative error code on fail
+ */
+int flash_area_is_erased(const struct flash_area *fa, off_t off, size_t len);
+
+/**
  * @brief Erase flash area or fill with erase-value
  *
  * On program-erase devices this function behaves exactly like flash_area_erase.
