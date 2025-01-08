@@ -156,6 +156,14 @@ typedef int (*flash_api_erase)(const struct device *dev, off_t offset,
 			       size_t size);
 
 /**
+ * @brief Flash is_erased implementation handler type
+ *
+ * @note This callback is optional and should be implemented for devices
+ * which support flash encryption.
+ */
+typedef int (*flash_api_is_erased)(const struct device *dev, off_t offset, size_t size);
+
+/**
  * @brief Get device size in bytes.
  *
  * Returns total logical device size in bytes.
@@ -206,6 +214,7 @@ __subsystem struct flash_driver_api {
 	flash_api_read read;
 	flash_api_write write;
 	flash_api_erase erase;
+	flash_api_is_erased is_erased;
 	flash_api_get_parameters get_parameters;
 	flash_api_get_size get_size;
 #if defined(CONFIG_FLASH_PAGE_LAYOUT)
@@ -329,6 +338,35 @@ static inline int z_impl_flash_erase(const struct device *dev, off_t offset,
 
 	if (api->erase != NULL) {
 		rc = api->erase(dev, offset, size);
+	}
+
+	return rc;
+}
+
+/**
+ *  @brief  Check if a flash section is erased
+ *
+ *  Checks if the physical flash for the provided offset and size is in the
+ *  erased state. This function should be used instead of flash_read() when
+ *  the flash is encrypted.
+ *
+ *  @param  dev             : flash device
+ *  @param  offset          : area starting offset
+ *  @param  size            : size of area to be checked
+ *
+ *  @retval 1 Flash section is in erased state
+ *  @retval 0 Flash section is not erased
+ *  @retval errno Negative error code on fail
+ */
+__syscall int flash_is_erased(const struct device *dev, off_t offset, size_t size);
+
+static inline int z_impl_flash_is_erased(const struct device *dev, off_t offset, size_t size)
+{
+	const struct flash_driver_api *api = (const struct flash_driver_api *)dev->api;
+	int rc = -ENOSYS;
+
+	if (api->is_erased != NULL) {
+		rc = api->is_erased(dev, offset, size);
 	}
 
 	return rc;
